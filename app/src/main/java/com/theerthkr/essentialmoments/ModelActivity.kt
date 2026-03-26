@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -50,18 +51,20 @@ class ModelActivity : ComponentActivity() {
                     }
                 }
 
-                Row(modifier = Modifier.fillMaxSize()) {
-                    // 3. Display the result in a Compose Text element
-                    Text(
-                        text = imageInferenceResult,
-                        modifier = Modifier
-                            .padding(16.dp)
-                    )
-                    Text(
-                        text = textInferenceResult,
-                        modifier = Modifier
-                            .padding(16.dp)
-                    )
+                Scaffold(modifier = Modifier) { innerPadding ->
+                    Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                        // 3. Display the result in a Compose Text element
+                        Text(
+                            text = imageInferenceResult,
+                            modifier = Modifier
+                                .padding(16.dp)
+                        )
+                        Text(
+                            text = textInferenceResult,
+                            modifier = Modifier
+                                .padding(16.dp)
+                        )
+                    }
                 }
             }
         }
