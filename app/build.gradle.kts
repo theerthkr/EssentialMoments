@@ -56,7 +56,11 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
+
+
     implementation ("com.google.ai.edge.litert:litert:2.1.0")
+
+
 
     implementation("com.google.accompanist:accompanist-permissions:0.34.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
