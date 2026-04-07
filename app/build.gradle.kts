@@ -60,8 +60,8 @@ dependencies {
 
     implementation ("com.google.ai.edge.litert:litert:2.1.0")
 
-
-
+//    // build.gradle.kts — add this
+//    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
     implementation("com.google.accompanist:accompanist-permissions:0.34.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")

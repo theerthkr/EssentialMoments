@@ -11,15 +11,18 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.google.ai.edge.litert.Accelerator
 import com.google.ai.edge.litert.CompiledModel
 import com.theerthkr.essentialmoments.ml.ImageEmbedder
+import com.theerthkr.essentialmoments.ml.TextEmbedder
 import com.theerthkr.essentialmoments.ui.theme.EssentialMomentsTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.sqrt
 
 class ModelActivity : ComponentActivity() {
 
@@ -84,7 +87,11 @@ class ModelActivity : ComponentActivity() {
                 testTensorResult = runLegacyTestTensor()
             }
         }
+        // Inside ModelDebugScreen composable, add alongside existing buttons:
+        val context = LocalContext.current
+        var textEmbedResult by remember { mutableStateOf("Not run") }
 
+        val textEmbedder = remember { TextEmbedder(context) }
         Scaffold { padding ->
             Column(
                 Modifier
@@ -130,7 +137,31 @@ class ModelActivity : ComponentActivity() {
                         else MaterialTheme.colorScheme.error
                     )
                 }
+                Button(onClick ={
+
+                    scope.launch(Dispatchers.Default) {
+                        textEmbedder.initialize(debug = true)
+                        val e = textEmbedder.embed("a cat sitting on a sofa", debug = true)
+                        textEmbedResult = if (e != null)
+
+
+
+                            "✅ text dim=${e.size}  norm=${"%.6f".format(sqrt(e.fold(0f){a,x->a+x*x}))}"
+                        else
+                            "❌ text embedding failed — check Logcat: TextEmbedder / SigLIPTokenizer"
+                    }
+                }
+                ) {
+                    Text("Test text embed")
+                }
+
+                Text(textEmbedResult, style = MaterialTheme.typography.bodySmall)
+
+
             }
+
+
+
         }
     }
 
