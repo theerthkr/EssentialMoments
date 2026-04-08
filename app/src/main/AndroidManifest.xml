@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
@@ -13,6 +14,18 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.EssentialMoments">
+
+        <!-- WorkManager: IndexingWorker -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup" />
+        </provider>
+
         <activity
             android:name=".ModelActivity"
             android:exported="false"
@@ -23,17 +36,21 @@
             android:name=".SearchActivity"
             android:exported="false"
             android:label="@string/title_activity_search"
-            android:theme="@style/Theme.EssentialMoments" />
+            android:theme="@style/Theme.EssentialMoments"
+            android:windowSoftInputMode="adjustResize" />
+
         <activity
             android:name=".ImageViewActivity"
             android:exported="false"
             android:label="@string/title_activity_image_view"
             android:theme="@style/Theme.EssentialMoments" />
+
         <activity
             android:name=".AlbumDetailActivity"
             android:exported="true"
             android:label="@string/title_activity_album_detail"
             android:theme="@style/Theme.EssentialMoments" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -41,10 +58,10 @@
             android:theme="@style/Theme.EssentialMoments">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
     </application>
 
 </manifest>
