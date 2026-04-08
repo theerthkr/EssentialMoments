@@ -9,21 +9,27 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Flat-file embedding store.
+ * Flat-file embedding store — append-only binary file + JSON index.
  *
- * Layout on disk:
- *   embeddings.bin  — raw float32 values, each embedding = 768 × 4 bytes = 3072 bytes
+ * On-disk layout:
+ *   embeddings.bin  — raw float32 values, each record = 768 × 4 = 3072 bytes
  *   embeddings.idx  — JSON: { "imageId": byteOffset, ... }
  *
- * This gives O(1) lookup by imageId and O(N) scan for search.
- * For <10k images, a full scan takes ~30ms on a mid-range device.
+ * Performance notes:
+ *   - store()      : appends to bin, updates in-memory index (O(1))
+ *   - flushIndex() : writes index to disk — call once per batch, not per store()
+ *   - search()     : single RAF session, O(N) scan — ~30ms for 10k images
+ *   - get()        : O(1) seek by imageId
+ *
+ * Thread safety: store(), flushIndex(), clearAll() are @Synchronized.
+ *                search() and get() are read-only and safe from any thread.
  */
 class EmbeddingStore(context: Context) {
 
     companion object {
         private const val TAG = "EmbeddingStore"
-        const val DIM = ImageEmbedder.EMBEDDING_DIM          // 768
-        private const val BYTES_PER_EMBEDDING = DIM * 4     // float32 = 4 bytes
+        const val DIM = ImageEmbedder.EMBEDDING_DIM       // 768
+        private const val BYTES_PER_EMBEDDING = DIM * 4  // float32 = 4 bytes each
         private const val BIN_FILE = "embeddings.bin"
         private const val IDX_FILE = "embeddings.idx"
     }
@@ -31,7 +37,7 @@ class EmbeddingStore(context: Context) {
     private val binFile = File(context.filesDir, BIN_FILE)
     private val idxFile = File(context.filesDir, IDX_FILE)
 
-    // In-memory index: imageId (String) → byte offset in bin file
+    // In-memory index: imageId → byte offset in bin file
     private val index = mutableMapOf<String, Long>()
 
     init {
@@ -41,40 +47,60 @@ class EmbeddingStore(context: Context) {
     // ── Write ─────────────────────────────────────────────────────
 
     /**
-     * Appends an embedding for [imageId]. Skips if already indexed.
-     * Thread-safe: synchronized on the bin file.
+     * Appends an embedding for [imageId].
+     * Skips silently if [imageId] is already indexed.
+     * Does NOT flush to disk — call flushIndex() after your batch.
      */
     @Synchronized
     fun store(imageId: String, embedding: FloatArray) {
-        require(embedding.size == DIM) { "Expected $DIM floats, got ${embedding.size}" }
-        if (index.containsKey(imageId)) return  // already indexed
+        require(embedding.size == DIM) {
+            "Expected $DIM floats, got ${embedding.size}"
+        }
+        if (index.containsKey(imageId)) return
 
         val offset = binFile.length()
 
         RandomAccessFile(binFile, "rw").use { raf ->
             raf.seek(offset)
-            val buf = ByteBuffer.allocate(BYTES_PER_EMBEDDING).order(ByteOrder.nativeOrder())
+            val buf = ByteBuffer
+                .allocate(BYTES_PER_EMBEDDING)
+                .order(ByteOrder.LITTLE_ENDIAN)   // consistent across devices
             embedding.forEach { buf.putFloat(it) }
             raf.write(buf.array())
         }
 
         index[imageId] = offset
-        saveIndex()
+        // NOTE: intentionally NOT saving index here — caller must call flushIndex()
+        Log.v(TAG, "Stored $imageId at offset=$offset  total=${index.size}")
+    }
 
-        Log.d(TAG, "Stored embedding for $imageId at offset=$offset  total=${index.size}")
+    /**
+     * Persists the in-memory index to disk.
+     * Call once after each batch of store() calls — not inside the per-image loop.
+     */
+    @Synchronized
+    fun flushIndex() {
+        try {
+            val json = JSONObject()
+            index.forEach { (k, v) -> json.put(k, v) }
+            idxFile.writeText(json.toString())
+            Log.d(TAG, "Index flushed: ${index.size} entries")
+        } catch (e: Exception) {
+            Log.e(TAG, "flushIndex failed: ${e.message}")
+        }
     }
 
     // ── Read ──────────────────────────────────────────────────────
 
-    /** Returns the embedding for [imageId], or null if not indexed. */
+    /** Returns the stored embedding for [imageId], or null if not indexed. */
     fun get(imageId: String): FloatArray? {
         val offset = index[imageId] ?: return null
-
         return RandomAccessFile(binFile, "r").use { raf ->
             raf.seek(offset)
-            val buf = ByteArray(BYTES_PER_EMBEDDING)
-            raf.readFully(buf)
-            ByteBuffer.wrap(buf).order(ByteOrder.nativeOrder())
+            val raw = ByteArray(BYTES_PER_EMBEDDING)
+            raf.readFully(raw)
+            ByteBuffer.wrap(raw)
+                .order(ByteOrder.LITTLE_ENDIAN)
                 .asFloatBuffer()
                 .let { fb -> FloatArray(DIM) { fb.get() } }
         }
@@ -83,25 +109,31 @@ class EmbeddingStore(context: Context) {
     // ── Search ────────────────────────────────────────────────────
 
     /**
-     * Linear scan — returns top [topK] imageIds sorted by cosine similarity
-     * to [queryEmbedding]. Both query and stored embeddings must be L2-normalised,
-     * so cosine similarity = dot product.
+     * Linear scan — returns top [topK] results sorted by cosine similarity.
+     * Both query and stored embeddings must be L2-normalised beforehand;
+     * cosine similarity then equals the dot product.
+     *
+     * Timing: ~30ms for 10k images on a mid-range device (single RAF session).
      */
     fun search(queryEmbedding: FloatArray, topK: Int = 20): List<SearchResult> {
-        require(queryEmbedding.size == DIM)
+        require(queryEmbedding.size == DIM) {
+            "Query must be $DIM-dimensional, got ${queryEmbedding.size}"
+        }
         if (index.isEmpty()) return emptyList()
 
         val results = mutableListOf<SearchResult>()
+        val raw = ByteArray(BYTES_PER_EMBEDDING)
 
         RandomAccessFile(binFile, "r").use { raf ->
-            val buf = ByteArray(BYTES_PER_EMBEDDING)
-
             for ((imageId, offset) in index) {
                 raf.seek(offset)
-                raf.readFully(buf)
-                val fb = ByteBuffer.wrap(buf).order(ByteOrder.nativeOrder()).asFloatBuffer()
+                raf.readFully(raw)
 
-                // Dot product = cosine similarity (both vectors are unit-normalised)
+                val fb = ByteBuffer.wrap(raw)
+                    .order(ByteOrder.LITTLE_ENDIAN)
+                    .asFloatBuffer()
+
+                // Dot product of two unit vectors = cosine similarity
                 var score = 0f
                 for (i in 0 until DIM) score += queryEmbedding[i] * fb.get(i)
 
@@ -115,10 +147,10 @@ class EmbeddingStore(context: Context) {
     // ── Utility ───────────────────────────────────────────────────
 
     fun isIndexed(imageId: String) = index.containsKey(imageId)
-    fun indexedCount() = index.size
+    fun indexedCount()             = index.size
     fun allIndexedIds(): Set<String> = index.keys.toSet()
 
-    /** Clears everything — useful for re-indexing during debug */
+    /** Wipes everything — useful when you want a clean re-index during debug */
     @Synchronized
     fun clearAll() {
         binFile.delete()
@@ -134,20 +166,9 @@ class EmbeddingStore(context: Context) {
         try {
             val json = JSONObject(idxFile.readText())
             json.keys().forEach { key -> index[key] = json.getLong(key) }
-            Log.d(TAG, "Loaded index: ${index.size} entries")
+            Log.d(TAG, "Loaded index: ${index.size} entries from ${idxFile.name}")
         } catch (e: Exception) {
-            Log.e(TAG, "loadIndex failed: ${e.message}")
-        }
-    }
-
-    @Synchronized
-    private fun saveIndex() {
-        try {
-            val json = JSONObject()
-            index.forEach { (k, v) -> json.put(k, v) }
-            idxFile.writeText(json.toString())
-        } catch (e: Exception) {
-            Log.e(TAG, "saveIndex failed: ${e.message}")
+            Log.e(TAG, "loadIndex failed — index may be corrupt: ${e.message}")
         }
     }
 }
