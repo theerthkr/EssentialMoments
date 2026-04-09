@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import com.google.ai.edge.litert.Accelerator
 import com.google.ai.edge.litert.CompiledModel
 import com.theerthkr.essentialmoments.ml.ImageEmbedder
+import com.theerthkr.essentialmoments.ml.SigLIPTokenizer
 import com.theerthkr.essentialmoments.ml.TextEmbedder
 import com.theerthkr.essentialmoments.ui.theme.EssentialMomentsTheme
 import kotlinx.coroutines.Dispatchers
@@ -33,12 +34,7 @@ class ModelActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         imageEmbedder = ImageEmbedder(this)
-
-        setContent {
-            EssentialMomentsTheme {
-                ModelDebugScreen()
-            }
-        }
+        setContent { EssentialMomentsTheme { ModelDebugScreen() } }
     }
 
     @Composable
@@ -47,213 +43,117 @@ class ModelActivity : ComponentActivity() {
         val context = LocalContext.current
         val scroll  = rememberScrollState()
 
-        // ── State ────────────────────────────────────────────────
-        var legacyResult    by remember { mutableStateOf("Tap 'Run legacy test'") }
-        var imageResult     by remember { mutableStateOf("Pick an image to test") }
+        var legacyResult    by remember { mutableStateOf("Tap run") }
+        var imageResult     by remember { mutableStateOf("Pick an image") }
         var selfSimResult   by remember { mutableStateOf("") }
         var crossSimResult  by remember { mutableStateOf("") }
         var textEmbedResult by remember { mutableStateOf("Not run") }
+        var tokenizerResult by remember { mutableStateOf("Not run") }
         var isLoading       by remember { mutableStateOf(false) }
-
-        // For cross-similarity: hold two URIs
         var uriA by remember { mutableStateOf<Uri?>(null) }
         var uriB by remember { mutableStateOf<Uri?>(null) }
 
         val textEmbedder = remember { TextEmbedder(context) }
+        val tokenizer    = remember { SigLIPTokenizer(context) }
 
-        // ── Image pickers ────────────────────────────────────────
-        val pickImageA = rememberLauncherForActivityResult(
-            ActivityResultContracts.GetContent()
-        ) { uri: Uri? ->
-            uriA = uri
-            crossSimResult = if (uriB != null) "Ready — tap Cross-similarity" else "Now pick image B"
-        }
-
-        val pickImageB = rememberLauncherForActivityResult(
-            ActivityResultContracts.GetContent()
-        ) { uri: Uri? ->
-            uriB = uri
-            crossSimResult = if (uriA != null) "Ready — tap Cross-similarity" else "Pick image A first"
-        }
-
-        val pickSingleImage = rememberLauncherForActivityResult(
-            ActivityResultContracts.GetContent()
-        ) { uri: Uri? ->
+        val pickSingle = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
             if (uri == null) return@rememberLauncherForActivityResult
             scope.launch(Dispatchers.Default) {
-                isLoading = true
-                imageResult   = "Running pipeline…"
-                selfSimResult = ""
-
+                isLoading = true; imageResult = "Running..."; selfSimResult = ""
                 imageEmbedder.initialize(debug = true)
-
-                val embedding = imageEmbedder.embed(uri, debug = true)
-                imageResult = if (embedding != null) {
-                    val norm = imageEmbedder.l2Norm(embedding)
-                    "✅ dim=${embedding.size}  L2=${"%.6f".format(norm)}\n" +
-                    "first 5: ${embedding.take(5).joinToString { "%.4f".format(it) }}\n" +
-                    "delegate: ${imageEmbedder.activeDelegate}"
-                } else {
-                    "❌ Pipeline failed — check Logcat tags: ImageEmbedder / ImagePreprocessor"
-                }
-
-                // Self-similarity test
-                val bmp = android.graphics.BitmapFactory.decodeStream(
-                    contentResolver.openInputStream(uri)
-                )
+                val e = imageEmbedder.embed(uri, debug = true)
+                imageResult = if (e != null)
+                    "OK dim=${e.size} L2=${"%.6f".format(imageEmbedder.l2Norm(e))}\nfirst5: ${e.take(5).joinToString { "%.4f".format(it) }}\ndelegate: ${imageEmbedder.activeDelegate}"
+                else "FAIL - check Logcat: ImageEmbedder"
+                val bmp = android.graphics.BitmapFactory.decodeStream(contentResolver.openInputStream(uri))
                 if (bmp != null) {
                     val sim = imageEmbedder.selfSimilarityTest(bmp)
-                    selfSimResult = "Self-similarity: ${"%.6f".format(sim)}  (expect ≈ 1.0)"
+                    selfSimResult = "SelfSim: ${"%.6f".format(sim)} (expect ~1.0)"
                     bmp.recycle()
                 }
-
                 isLoading = false
             }
         }
+        val pickA = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uriA = it; crossSimResult = if (uriB != null) "Ready" else "Pick B" }
+        val pickB = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uriB = it; crossSimResult = if (uriA != null) "Ready" else "Pick A" }
 
-        // ── UI ───────────────────────────────────────────────────
-        Scaffold { padding ->
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(16.dp)
-                    .verticalScroll(scroll),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+        Scaffold { pad ->
+            Column(Modifier.fillMaxSize().padding(pad).padding(16.dp).verticalScroll(scroll),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+
                 Text("Model Debug", style = MaterialTheme.typography.headlineSmall)
 
-                // ── 1. Legacy test_tensor.bin ─────────────────────
-                SectionLabel("1 · Legacy test_tensor.bin")
-                Button(onClick = {
-                    scope.launch(Dispatchers.Default) {
-                        legacyResult = "Running…"
-                        legacyResult = runLegacyTestTensor()
-                    }
-                }) { Text("Run legacy test") }
-                ResultText(legacyResult)
+                Text("1 - Legacy tensor", style = MaterialTheme.typography.labelLarge)
+                Button(onClick = { scope.launch(Dispatchers.Default) { legacyResult = "..."; legacyResult = runLegacy() } }) { Text("Run legacy") }
+                RText(legacyResult); HorizontalDivider()
 
+                Text("2 - Image pipeline", style = MaterialTheme.typography.labelLarge)
+                Button(onClick = { pickSingle.launch("image/*") }, enabled = !isLoading) { Text(if (isLoading) "Running..." else "Pick & embed") }
+                RText(imageResult)
+                if (selfSimResult.isNotEmpty()) RText(selfSimResult)
                 HorizontalDivider()
 
-                // ── 2. Real image — full pipeline ─────────────────
-                SectionLabel("2 · Full image pipeline (all debug checkpoints)")
-                Button(
-                    onClick  = { pickSingleImage.launch("image/*") },
-                    enabled  = !isLoading
-                ) { Text(if (isLoading) "Running…" else "Pick image & embed") }
-
-                ResultText(imageResult)
-                if (selfSimResult.isNotEmpty()) ResultText(selfSimResult)
-
-                HorizontalDivider()
-
-                // ── 3. Cross-similarity ───────────────────────────
-                SectionLabel("3 · Cross-similarity (two different images)")
+                Text("3 - Cross-similarity", style = MaterialTheme.typography.labelLarge)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { pickImageA.launch("image/*") }) {
-                        Text(if (uriA == null) "Pick A" else "A ✅")
-                    }
-                    Button(onClick = { pickImageB.launch("image/*") }) {
-                        Text(if (uriB == null) "Pick B" else "B ✅")
-                    }
+                    Button(onClick = { pickA.launch("image/*") }) { Text(if (uriA == null) "Pick A" else "A OK") }
+                    Button(onClick = { pickB.launch("image/*") }) { Text(if (uriB == null) "Pick B" else "B OK") }
                 }
-                Button(
-                    onClick = {
-                        val a = uriA ?: return@Button
-                        val b = uriB ?: return@Button
-                        scope.launch(Dispatchers.Default) {
-                            isLoading = true
-                            crossSimResult = "Computing…"
-                            imageEmbedder.initialize()
-                            val sim = imageEmbedder.crossSimilarityTest(a, b)
-                            crossSimResult = if (sim >= 0f) {
-                                "Cosine similarity: ${"%.4f".format(sim)}\n" +
-                                "similar ≈ 0.9+  |  unlike ≈ 0.5–0.7"
-                            } else {
-                                "❌ Cross-similarity failed"
-                            }
-                            isLoading = false
-                        }
-                    },
-                    enabled = uriA != null && uriB != null && !isLoading
-                ) { Text("Run cross-similarity") }
-                if (crossSimResult.isNotEmpty()) ResultText(crossSimResult)
-
+                Button(onClick = {
+                    val a = uriA ?: return@Button; val b = uriB ?: return@Button
+                    scope.launch(Dispatchers.Default) {
+                        isLoading = true; crossSimResult = "..."
+                        imageEmbedder.initialize()
+                        val sim = imageEmbedder.crossSimilarityTest(a, b)
+                        crossSimResult = if (sim >= 0f) "Cosine: ${"%.4f".format(sim)}\nsimilar~0.9+ | unlike~0.5-0.7" else "FAIL"
+                        isLoading = false
+                    }
+                }, enabled = uriA != null && uriB != null && !isLoading) { Text("Run cross-sim") }
+                if (crossSimResult.isNotEmpty()) RText(crossSimResult)
                 HorizontalDivider()
 
-                // ── 4. Text embedding ─────────────────────────────
-                SectionLabel("4 · Text embedding")
+                Text("4 - Tokenizer + text embed", style = MaterialTheme.typography.labelLarge)
                 Button(onClick = {
                     scope.launch(Dispatchers.Default) {
-                        textEmbedResult = "Running…"
+                        tokenizer.initialize()
+                        // Each phrase should produce 3-8 pieces, not 1 giant or char-by-char
+                        tokenizerResult = listOf(
+                            "a cat sitting on a sofa",
+                            "sunset at the beach",
+                            "birthday party"
+                        ).joinToString("\n") { tokenizer.debugTokenize(it) }
+                    }
+                }) { Text("Test tokenizer") }
+                RText(tokenizerResult)
+
+                Button(onClick = {
+                    scope.launch(Dispatchers.Default) {
+                        textEmbedResult = "..."
                         textEmbedder.initialize(debug = true)
                         val e = textEmbedder.embed("a cat sitting on a sofa", debug = true)
                         textEmbedResult = if (e != null) {
-                            val norm = sqrt(e.fold(0f) { a, x -> a + x * x })
-                            "✅ dim=${e.size}  L2=${"%.6f".format(norm)}\n" +
-                            "first 5: ${e.take(5).joinToString { "%.4f".format(it) }}"
-                        } else {
-                            "❌ Text embed failed — check Logcat: TextEmbedder / SigLIPTokenizer"
-                        }
+                            val n = sqrt(e.fold(0f) { a, x -> a + x * x })
+                            "OK dim=${e.size} L2=${"%.6f".format(n)}\nfirst5: ${e.take(5).joinToString { "%.4f".format(it) }}"
+                        } else "FAIL - check Logcat: TextEmbedder"
                     }
                 }) { Text("Test text embed") }
-                ResultText(textEmbedResult)
+                RText(textEmbedResult)
             }
         }
     }
 
-    // ── Composable helpers ────────────────────────────────────────
+    @Composable private fun RText(t: String) = Text(t,
+        style = MaterialTheme.typography.bodySmall,
+        color = when { t.startsWith("OK") || t.startsWith("Self") -> MaterialTheme.colorScheme.primary
+            t.startsWith("FAIL") -> MaterialTheme.colorScheme.error
+            else -> Color.Unspecified })
 
-    @Composable
-    private fun SectionLabel(text: String) {
-        Text(text, style = MaterialTheme.typography.labelLarge)
-    }
+    private fun runLegacy(): String = try {
+        val m = CompiledModel.create(assets, "siglip2_base_patch16-224_f16.tflite", CompiledModel.Options(Accelerator.NPU))
+        val b = assets.open("test_tensor.bin").readBytes()
+        val f = FloatArray(b.size / 4).also { ByteBuffer.wrap(b).order(ByteOrder.nativeOrder()).asFloatBuffer().get(it) }
+        val ib = m.createInputBuffers(); val ob = m.createOutputBuffers()
+        ib[0].writeFloat(f); m.run(ib, ob); val out = ob[0].readFloat()
+        "OK dim=${out.size} L2=${"%.4f".format(sqrt(out.fold(0f){a,x->a+x*x}))}"
+    } catch (e: Exception) { "FAIL: ${e.message}" }
 
-    @Composable
-    private fun ResultText(text: String) {
-        Text(
-            text,
-            style = MaterialTheme.typography.bodySmall,
-            color = when {
-                text.startsWith("✅") -> MaterialTheme.colorScheme.primary
-                text.startsWith("❌") -> MaterialTheme.colorScheme.error
-                else -> Color.Unspecified
-            }
-        )
-    }
-
-    // ── Legacy test (kept for regression) ─────────────────────────
-
-    private fun runLegacyTestTensor(): String {
-        return try {
-            val model = CompiledModel.create(
-                assets,
-                "siglip2_base_patch16-224_f16.tflite",
-                CompiledModel.Options(Accelerator.NPU)
-            )
-            val tensorBytes = assets.open("test_tensor.bin").readBytes()
-            val floatArray  = FloatArray(tensorBytes.size / 4)
-            ByteBuffer.wrap(tensorBytes)
-                .order(ByteOrder.nativeOrder())
-                .asFloatBuffer()
-                .get(floatArray)
-
-            val inputBuffers  = model.createInputBuffers()
-            val outputBuffers = model.createOutputBuffers()
-            inputBuffers[0].writeFloat(floatArray)
-            model.run(inputBuffers, outputBuffers)
-            val out = outputBuffers[0].readFloat()
-
-            val norm = sqrt(out.fold(0f) { a, x -> a + x * x })
-            "✅ dim=${out.size}  L2=${"%.6f".format(norm)}\n" +
-            "first 3: ${out.take(3).joinToString { "%.4f".format(it) }}"
-        } catch (e: Exception) {
-            "❌ ${e.message}"
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        imageEmbedder.close()
-    }
-}
+   }
