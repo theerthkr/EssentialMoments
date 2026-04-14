@@ -19,8 +19,18 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
 
+        externalNativeBuild {
+            cmake {
+                arguments ("-DANDROID_STL=c++_shared")
+            }
+        }
+    }
+    externalNativeBuild {
+        cmake {
+            path ("src/main/cpp/CMakeLists.txt")
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -63,4 +73,9 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")
     implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("androidx.navigation:navigation-compose:2.8.0")
+
+    implementation("ai.djl.huggingface:tokenizers:0.35.0")
+    implementation("ai.djl.android:tokenizer-native:0.33.0")
+
+
 }

@@ -36,7 +36,7 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                 "${MediaStore.Images.Media.DATE_MODIFIED} DESC"
             )
 
-            cursor?.use {
+            cursor?.use {   
                 val albumsMap = mutableMapOf<String, Album>()
 
 // 1. Get the column indices once before the loop
