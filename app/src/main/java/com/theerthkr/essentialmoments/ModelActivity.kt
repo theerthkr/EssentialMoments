@@ -1,159 +1,215 @@
 package com.theerthkr.essentialmoments
 
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.ImageDecoder
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
+import android.util.Log
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.lifecycleScope
+
+// Essential LiteRT 2.1.0 Imports
 import com.google.ai.edge.litert.Accelerator
 import com.google.ai.edge.litert.CompiledModel
-import com.theerthkr.essentialmoments.ml.ImageEmbedder
-import com.theerthkr.essentialmoments.ml.SigLIPTokenizer
-import com.theerthkr.essentialmoments.ml.TextEmbedder
 import com.theerthkr.essentialmoments.ui.theme.EssentialMomentsTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlin.math.sqrt
 
 class ModelActivity : ComponentActivity() {
-
-    private lateinit var imageEmbedder: ImageEmbedder
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        imageEmbedder = ImageEmbedder(this)
-        setContent { EssentialMomentsTheme { ModelDebugScreen() } }
-    }
+        enableEdgeToEdge()
+        setContent {
+            EssentialMomentsTheme {
+                var imageInferenceResult by remember { mutableStateOf("Waiting for image...") }
+                var textInferenceResult by remember { mutableStateOf("Initializing...") }
 
-    @Composable
-    fun ModelDebugScreen() {
-        val scope   = rememberCoroutineScope()
-        val context = LocalContext.current
-        val scroll  = rememberScrollState()
-
-        var legacyResult    by remember { mutableStateOf("Tap run") }
-        var imageResult     by remember { mutableStateOf("Pick an image") }
-        var selfSimResult   by remember { mutableStateOf("") }
-        var crossSimResult  by remember { mutableStateOf("") }
-        var textEmbedResult by remember { mutableStateOf("Not run") }
-        var tokenizerResult by remember { mutableStateOf("Not run") }
-        var isLoading       by remember { mutableStateOf(false) }
-        var uriA by remember { mutableStateOf<Uri?>(null) }
-        var uriB by remember { mutableStateOf<Uri?>(null) }
-
-        val textEmbedder = remember { TextEmbedder(context) }
-        val tokenizer    = remember { SigLIPTokenizer(context) }
-
-        val pickSingle = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-            if (uri == null) return@rememberLauncherForActivityResult
-            scope.launch(Dispatchers.Default) {
-                isLoading = true; imageResult = "Running..."; selfSimResult = ""
-                imageEmbedder.initialize(debug = true)
-                val e = imageEmbedder.embed(uri, debug = true)
-                imageResult = if (e != null)
-                    "OK dim=${e.size} L2=${"%.6f".format(imageEmbedder.l2Norm(e))}\nfirst5: ${e.take(5).joinToString { "%.4f".format(it) }}\ndelegate: ${imageEmbedder.activeDelegate}"
-                else "FAIL - check Logcat: ImageEmbedder"
-                val bmp = android.graphics.BitmapFactory.decodeStream(contentResolver.openInputStream(uri))
-                if (bmp != null) {
-                    val sim = imageEmbedder.selfSimilarityTest(bmp)
-                    selfSimResult = "SelfSim: ${"%.6f".format(sim)} (expect ~1.0)"
-                    bmp.recycle()
+                // 1. Setup the Photo Picker Launcher
+                val pickMedia = rememberLauncherForActivityResult(
+                    ActivityResultContracts.PickVisualMedia()
+                ) { uri ->
+                    if (uri != null) {
+                        imageInferenceResult = "Processing image..."
+                        // Launch a coroutine so we don't block the UI thread during inference
+                        lifecycleScope.launch(Dispatchers.Default) {
+                            val bitmap = uriToBitmap(uri)
+                            imageInferenceResult = runImageInference(bitmap)
+                        }
+                    } else {
+                        imageInferenceResult = "No image selected."
+                    }
                 }
-                isLoading = false
-            }
-        }
-        val pickA = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uriA = it; crossSimResult = if (uriB != null) "Ready" else "Pick B" }
-        val pickB = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uriB = it; crossSimResult = if (uriA != null) "Ready" else "Pick A" }
 
-        Scaffold { pad ->
-            Column(Modifier.fillMaxSize().padding(pad).padding(16.dp).verticalScroll(scroll),
-                verticalArrangement = Arrangement.spacedBy(12.dp)) {
-
-                Text("Model Debug", style = MaterialTheme.typography.headlineSmall)
-
-                Text("1 - Legacy tensor", style = MaterialTheme.typography.labelLarge)
-                Button(onClick = { scope.launch(Dispatchers.Default) { legacyResult = "..."; legacyResult = runLegacy() } }) { Text("Run legacy") }
-                RText(legacyResult); HorizontalDivider()
-
-                Text("2 - Image pipeline", style = MaterialTheme.typography.labelLarge)
-                Button(onClick = { pickSingle.launch("image/*") }, enabled = !isLoading) { Text(if (isLoading) "Running..." else "Pick & embed") }
-                RText(imageResult)
-                if (selfSimResult.isNotEmpty()) RText(selfSimResult)
-                HorizontalDivider()
-
-                Text("3 - Cross-similarity", style = MaterialTheme.typography.labelLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { pickA.launch("image/*") }) { Text(if (uriA == null) "Pick A" else "A OK") }
-                    Button(onClick = { pickB.launch("image/*") }) { Text(if (uriB == null) "Pick B" else "B OK") }
+                LaunchedEffect(Unit) {
+                    withContext(Dispatchers.Default) {
+                        textInferenceResult = runTextInference()
+                    }
                 }
-                Button(onClick = {
-                    val a = uriA ?: return@Button; val b = uriB ?: return@Button
-                    scope.launch(Dispatchers.Default) {
-                        isLoading = true; crossSimResult = "..."
-                        imageEmbedder.initialize()
-                        val sim = imageEmbedder.crossSimilarityTest(a, b)
-                        crossSimResult = if (sim >= 0f) "Cosine: ${"%.4f".format(sim)}\nsimilar~0.9+ | unlike~0.5-0.7" else "FAIL"
-                        isLoading = false
-                    }
-                }, enabled = uriA != null && uriB != null && !isLoading) { Text("Run cross-sim") }
-                if (crossSimResult.isNotEmpty()) RText(crossSimResult)
-                HorizontalDivider()
 
-                Text("4 - Tokenizer + text embed", style = MaterialTheme.typography.labelLarge)
-                Button(onClick = {
-                    scope.launch(Dispatchers.Default) {
-                        tokenizer.initialize()
-                        // Each phrase should produce 3-8 pieces, not 1 giant or char-by-char
-                        tokenizerResult = listOf(
-                            "a cat sitting on a sofa",
-                            "sunset at the beach",
-                            "birthday party"
-                        ).joinToString("\n") { tokenizer.debugTokenize(it) }
-                    }
-                }) { Text("Test tokenizer") }
-                RText(tokenizerResult)
+                Scaffold(modifier = Modifier) { innerPadding ->
+                    Column(modifier = Modifier.fillMaxSize().padding(innerPadding).padding(16.dp)) {
 
-                Button(onClick = {
-                    scope.launch(Dispatchers.Default) {
-                        textEmbedResult = "..."
-                        textEmbedder.initialize(debug = true)
-                        val e = textEmbedder.embed("a cat sitting on a sofa", debug = true)
-                        textEmbedResult = if (e != null) {
-                            val n = sqrt(e.fold(0f) { a, x -> a + x * x })
-                            "OK dim=${e.size} L2=${"%.6f".format(n)}\nfirst5: ${e.take(5).joinToString { "%.4f".format(it) }}"
-                        } else "FAIL - check Logcat: TextEmbedder"
+                        // 2. Add a Button to trigger the Photo Picker
+                        Button(onClick = {
+                            pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        }) {
+                            Text("Pick Image from Gallery")
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Text(text = "Image Model Result:")
+                        Text(text = imageInferenceResult, modifier = Modifier.padding(top = 8.dp, bottom = 16.dp))
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Text(text = "Text Model Result:")
+                        Text(text = textInferenceResult, modifier = Modifier.padding(top = 8.dp))
                     }
-                }) { Text("Test text embed") }
-                RText(textEmbedResult)
+                }
             }
         }
     }
 
-    @Composable private fun RText(t: String) = Text(t,
-        style = MaterialTheme.typography.bodySmall,
-        color = when { t.startsWith("OK") || t.startsWith("Self") -> MaterialTheme.colorScheme.primary
-            t.startsWith("FAIL") -> MaterialTheme.colorScheme.error
-            else -> Color.Unspecified })
+    // 3. Update the inference function to take a Bitmap
+    private fun runImageInference(bitmap: Bitmap): String {
+        return try {
+            val model = CompiledModel.create(
+                assets,
+                "siglip2_base_patch16-224.tflite",
+                CompiledModel.Options(Accelerator.NPU)
+            )
 
-    private fun runLegacy(): String = try {
-        val m = CompiledModel.create(assets, "siglip2_base_patch16-224_f16.tflite", CompiledModel.Options(Accelerator.NPU))
-        val b = assets.open("test_tensor.bin").readBytes()
-        val f = FloatArray(b.size / 4).also { ByteBuffer.wrap(b).order(ByteOrder.nativeOrder()).asFloatBuffer().get(it) }
-        val ib = m.createInputBuffers(); val ob = m.createOutputBuffers()
-        ib[0].writeFloat(f); m.run(ib, ob); val out = ob[0].readFloat()
-        "OK dim=${out.size} L2=${"%.4f".format(sqrt(out.fold(0f){a,x->a+x*x}))}"
-    } catch (e: Exception) { "FAIL: ${e.message}" }
+            // Use the processor class we built previously!
+            val processor = SiglipImageProcessor()
 
-   }
+            // Run the pipeline up to the NCHW FloatArray step
+            val resized = processor.resize(bitmap, 224, 224)
+            saveBitmapForDebugging(this, resized) // 'this' is the Activity context
+            val hwcPixels = processor.extractHwcPixels(resized)
+            val rescaled = processor.rescale(hwcPixels, 255.0f)
+            // Note: If you made siglipMean/siglipStd private in the class, just pass floatArrayOf(0.5f, 0.5f, 0.5f) here
+            val normalized = processor.normalize(rescaled, floatArrayOf(0.5f, 0.5f, 0.5f), floatArrayOf(0.5f, 0.5f, 0.5f))
+
+            // This is the final float array in [1, 3, 224, 224] format
+            val nchwFloatArray = processor.transposeHwcToNchw(normalized, 224, 224)
+
+            val inputBuffers = model.createInputBuffers()
+            val outputBuffers = model.createOutputBuffers()
+
+            // Write the processed FloatArray directly to the input buffer
+            inputBuffers[0].writeFloat(nchwFloatArray)
+            model.run(inputBuffers, outputBuffers)
+
+            // Read the raw output
+            val rawOutput = outputBuffers[0].readFloat()
+
+// Normalize it for Semantic Search!
+            val finalImageEmbedding = l2Normalize(rawOutput)
+
+            val preview = finalImageEmbedding.take(10).joinToString("\n")
+            "Success! Embedding Size: ${finalImageEmbedding.size}\n\nFirst 10 values:\n$preview"
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+            "Error: ${e.localizedMessage}"
+        }
+    }
+
+    private fun runTextInference(searchQuery: String = "a photo of a cute cat"): String {
+        return try {
+            // 1. Initialize our new custom processor (passing 'this' for the Context)
+            val textProcessor = SiglipTextProcessor(this)
+
+            // 2. Pass the text and get the fully normalized 768-D FloatArray back!
+            val finalTextEmbedding = textProcessor.getEmbedding(searchQuery)
+
+            // 3. Free up memory
+            textProcessor.close()
+
+            // 4. Format the output for the UI
+            val preview = finalTextEmbedding.take(5).joinToString(", ")
+            "Success! Embedding Dim: ${finalTextEmbedding.size}\nPrompt: \"$searchQuery\"\nFirst 5 values: $preview"
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+            "Error: ${e.localizedMessage}"
+        }
+    }
+
+    private fun uriToBitmap(uri: Uri): Bitmap {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val source = ImageDecoder.createSource(contentResolver, uri)
+            ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                decoder.isMutableRequired = true
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            MediaStore.Images.Media.getBitmap(contentResolver, uri)
+        }
+    }
+
+    private fun l2Normalize(embedding: FloatArray): FloatArray {
+        var sumOfSquares = 0.0f
+        for (value in embedding) {
+            sumOfSquares += value * value
+        }
+
+        val magnitude = kotlin.math.sqrt(sumOfSquares)
+
+        // Safety check to avoid division by zero
+        if (magnitude == 0.0f) return embedding
+
+        val normalized = FloatArray(embedding.size)
+        for (i in embedding.indices) {
+            normalized[i] = embedding[i] / magnitude
+        }
+        return normalized
+    }
+
+
+    fun saveBitmapForDebugging(context: Context, bitmap: Bitmap, filename: String = "debug_squashed.png") {
+        // Save to the app's external files directory so you can easily pull it
+        val file = File(context.getExternalFilesDir(null), filename)
+
+        try {
+            FileOutputStream(file).use { out ->
+                // CRITICAL: Must be PNG for lossless saving!
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            }
+            Log.d("ModelActivity", "Debug image saved successfully to: ${file.absolutePath}")
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Log.e("ModelActivity", "Failed to save debug image: ${e.message}")
+        }
+    }
+}

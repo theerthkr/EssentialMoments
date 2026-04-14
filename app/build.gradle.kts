@@ -19,8 +19,18 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
 
+        externalNativeBuild {
+            cmake {
+                arguments ("-DANDROID_STL=c++_shared")
+            }
+        }
+    }
+    externalNativeBuild {
+        cmake {
+            path ("src/main/cpp/CMakeLists.txt")
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -56,25 +66,16 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
-    // LiteRT (TFLite)
-    implementation("com.google.ai.edge.litert:litert:2.1.0")
+    implementation ("com.google.ai.edge.litert:litert:2.1.0")
 
-    // Permissions
     implementation("com.google.accompanist:accompanist-permissions:0.34.0")
-
-    // ViewModel + Lifecycle
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")
-
-    // Image loading
     implementation("io.coil-kt:coil-compose:2.6.0")
-
-    // Navigation
     implementation("androidx.navigation:navigation-compose:2.8.0")
 
-    // WorkManager  ← required for IndexingWorker
-    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("ai.djl.huggingface:tokenizers:0.35.0")
+    implementation("ai.djl.android:tokenizer-native:0.33.0")
 
-    // Startup (WorkManager initializer)
-    implementation("androidx.startup:startup-runtime:1.1.1")
+
 }
