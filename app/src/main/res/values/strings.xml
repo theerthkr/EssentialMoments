@@ -6,4 +6,5 @@
     <string name="title_activity_search">SearchActivity</string>
     <string name="title_activity_run_model">RunModelActivity</string>
     <string name="title_activity_model">ModelActivity</string>
+    <string name="title_activity_onboarding_activity.kt">OnboardingActivity.kt</string>
 </resources>

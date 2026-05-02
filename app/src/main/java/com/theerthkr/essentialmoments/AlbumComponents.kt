@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -20,43 +21,57 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 
 @Composable
-fun AlbumCard(album: Album, onClick: (Album) -> Unit){
-
-    Column(modifier = Modifier
-        .fillMaxWidth()
-        .padding(4.dp) //space around the card
-        .clip(shape = RoundedCornerShape(12.dp))
-        .clickable { onClick(album) }
-    ){
-        Box(
-            modifier = Modifier
-                .aspectRatio(1f) // Makes it a square
-                .clip(RoundedCornerShape(12.dp)) // Rounds the corners
-                .background(Color.DarkGray) // Placeholder for the actual image
-        ){
+fun PhotoGrid(photos: List<MediaImage>) {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(4), // 4 columns for photos
+        contentPadding = PaddingValues(1.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        items(photos) { photo ->
             AsyncImage(
-                model = album.coverUri, // This is the file path from MediaStore
-                contentDescription = "Cover for ${album.name}",
+                model = photo.uri,
+                contentDescription = null,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(150.dp) // Or whatever height you want
-                    .clip(RoundedCornerShape(12.dp)), // Nice rounded corners
-                contentScale = ContentScale.Crop // Fills the square nicely
+                    .aspectRatio(1f)
+                    .padding(1.dp),
+                contentScale = ContentScale.Crop
             )
         }
-        Text(
-            modifier = Modifier.padding(top = 4.dp, start = 2.dp),
-            text = album.name,
-            style = MaterialTheme.typography.labelLarge,
-            maxLines = 1 // Keeps it neat if the name is too long
+    }
+}
 
+@Composable
+fun AlbumCard(album: Album, onClick: (Album) -> Unit){
+    Column(modifier = Modifier
+        .fillMaxWidth()
+        .padding(8.dp)
+        .clickable { onClick(album) }
+    ){
+        AsyncImage(
+            model = album.coverUri,
+            contentDescription = "Cover for ${album.name}",
+            modifier = Modifier
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color.DarkGray),
+            contentScale = ContentScale.Crop
         )
         Text(
-            text = "${album.photoCount} photos",
+            modifier = Modifier.padding(top = 8.dp),
+            text = album.name,
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontFamily = FontFamily.Serif
+            ),
+            color = Color.White,
+            maxLines = 1
+        )
+        Text(
+            text = album.photoCount.toString(),
             style = MaterialTheme.typography.bodySmall,
             color = Color.Gray
         )
@@ -68,10 +83,9 @@ fun AlbumGrid(
     albums: List<Album>,
     onAlbumClick: (Album) -> Unit
 ) {
-
     LazyVerticalGrid(
-        columns = GridCells.Fixed(3), // MAGIC NUMBER: Forces 3 columns
-        contentPadding = PaddingValues(top = 64.dp, start = 8.dp, end = 8.dp, bottom = 8.dp)
+        columns = GridCells.Fixed(3),
+        contentPadding = PaddingValues(8.dp)
     ) {
         items(albums) { album ->
             AlbumCard(
@@ -79,7 +93,5 @@ fun AlbumGrid(
                 onClick = { onAlbumClick(album) }
             )
         }
-
-
     }
 }

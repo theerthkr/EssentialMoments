@@ -133,9 +133,6 @@ class AlbumDetailActivity : ComponentActivity() {
     fun DetailTopBar(title: String, onBack: () -> Unit) {
         // 1. Get the context and cast it safely to Activity
         val context = LocalContext.current
-        val activity = context as? Activity
-
-        val DarkSurface = Color(0xFF121212)
 
         Box(
             modifier = Modifier
@@ -143,8 +140,8 @@ class AlbumDetailActivity : ComponentActivity() {
                 .background(
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            DarkSurface.copy(alpha = 0.9f),
-                            DarkSurface.copy(alpha = 0.5f),
+                            MaterialTheme.colorScheme.background.copy(alpha = 0.95f),
+                            MaterialTheme.colorScheme.background.copy(alpha = 0.7f),
                             Color.Transparent
                         )
                     )
@@ -162,7 +159,7 @@ class AlbumDetailActivity : ComponentActivity() {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
-                        tint = Color.White
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
 
@@ -174,7 +171,7 @@ class AlbumDetailActivity : ComponentActivity() {
                     modifier = Modifier
                         .weight(1f)
                         .padding(horizontal = 8.dp),
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
                 IconButton(onClick = {
@@ -185,18 +182,15 @@ class AlbumDetailActivity : ComponentActivity() {
                     Icon(
                         imageVector = Icons.Default.Search,
                         contentDescription = "Search",
-                        tint = Color.White,
-
-
-                        )
-
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
                 }
 
                 IconButton(onClick = { /* Options logic */ }) {
                     Icon(
                         imageVector = Icons.Default.MoreVert,
                         contentDescription = "Options",
-                        tint = Color.White
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }

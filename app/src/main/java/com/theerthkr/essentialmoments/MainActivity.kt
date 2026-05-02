@@ -41,6 +41,25 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -63,6 +82,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.theerthkr.essentialmoments.ui.theme.EssentialMomentsTheme
@@ -89,119 +110,228 @@ class MainActivity : ComponentActivity() {
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     @Composable
     fun MainGalleryScreen() {
-        val DarkSurface = Color(0xFF121212)
         val context = LocalContext.current
+        val haptic = LocalHapticFeedback.current
         var showMenu by remember { mutableStateOf(false) }
-        var hasPermission by remember { mutableStateOf(false) }
+        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_IMAGES
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+
+        var hasPermission by remember {
+            mutableStateOf(
+                ContextCompat.checkSelfPermission(context, permissions) == PackageManager.PERMISSION_GRANTED
+            )
+        }
+        var selectedTab by remember { mutableStateOf("Photos") }
 
         val viewModel: GalleryViewModel = viewModel()
         val albums by viewModel.albums.collectAsStateWithLifecycle()
+        val allPhotos by viewModel.allImages.collectAsStateWithLifecycle()
+        val isDescending by viewModel.isDescending.collectAsStateWithLifecycle()
 
         // 1. Permission Launcher
         val permissionLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.RequestPermission()
         ) { isGranted ->
             hasPermission = isGranted
-            if (isGranted) viewModel.fetchAlbums()
+            if (isGranted) {
+                viewModel.fetchAlbums()
+                viewModel.fetchAllImages()
+            }
         }
 
         // 2. Initial Permission Check
-        LaunchedEffect(Unit) {
-            permissionLauncher.launch(Manifest.permission.READ_MEDIA_IMAGES)
+        LaunchedEffect(hasPermission) {
+            if (hasPermission) {
+                viewModel.fetchAlbums()
+                viewModel.fetchAllImages()
+            } else {
+                permissionLauncher.launch(permissions)
+            }
         }
 
-        Box(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-
-            // 3. THE GALLERY CONTENT (Drawn first, so it stays behind the top bar)
-            if (hasPermission) {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    // Assuming AlbumGrid is defined elsewhere in your project
-                    AlbumGrid(albums = albums) { album ->
-                        val intent = Intent(context, AlbumDetailActivity::class.java).apply {
-                            putExtra("ALBUM_ID", album.id)
-                            putExtra("ALBUM_NAME", album.name)
-                        }
-                        context.startActivity(intent)
-                    }
-                }
-            } else {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Please grant access to photos", color = Color.Gray)
-                }
+        val searchVm: SearchViewModel = viewModel(factory = SearchViewModel.Factory(context))
+        val imagePicker = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.GetMultipleContents()
+        ) { uris ->
+            if (uris.isNotEmpty()) {
+                searchVm.indexImages(uris)
+                val intent = Intent(context, SearchActivity::class.java)
+                context.startActivity(intent)
             }
+        }
 
-            // 4. THE OVERLAY TOP BAR (Drawn last to stay on top)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        brush = Brush.verticalGradient(
-                            colors = listOf(
-                                DarkSurface.copy(alpha = 0.95f),
-                                DarkSurface.copy(alpha = 0.7f),
-                                Color.Transparent
-                            )
-                        )
-                    )
-                    .padding(bottom = 24.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            floatingActionButton = {
+                // FAB with Glow Effect
+                Box(
+                    modifier = Modifier
+                        .padding(bottom = 80.dp)
                 ) {
-                    Spacer(modifier = Modifier.weight(0.1f))
-
-                    // Search Bar
+                    // Glow background
                     Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                            .clip(RoundedCornerShape(48.dp))
-                            .border(1.dp, Color.Gray, RoundedCornerShape(48.dp))
-                            .background(color = Color.DarkGray)
-                            .clickable {
-                                val intent = Intent(context, SearchActivity::class.java)
-                                context.startActivity(intent)
-                                (context as? Activity)?.overrideActivityTransition(Activity.OVERRIDE_TRANSITION_OPEN, 0, 0)
+                            .size(56.dp)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), CircleShape)
+                            .padding(4.dp)
+                    )
+
+                    FloatingActionButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (selectedTab == "Photos") {
+                                viewModel.toggleSortOrder()
+                            } else {
+                                imagePicker.launch("image/*")
                             }
+                        },
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = if (selectedTab == "Photos" && isDescending) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        shape = CircleShape,
+                        modifier = Modifier
+                            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), CircleShape)
                     ) {
-                        Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Search, null, tint = Color.Gray)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Search...", color = Color.Gray)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.weight(0.1f))
-
-                    // Three-Dots Menu
-                    Box {
-                        IconButton(onClick = { showMenu = true }) {
-                            Icon(Icons.Default.MoreVert, "Options", tint = Color.White)
-                        }
-
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Run Model") },
-                                onClick = {
-                                    showMenu = false
-                                    val intent = Intent(context, ModelActivity::class.java)
-                                    context.startActivity(intent)
-                                    // Smooth transition matching your search bar
-                                    (context as? Activity)?.overrideActivityTransition(Activity.OVERRIDE_TRANSITION_OPEN, 0, 0)
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("About") },
-                                onClick = { showMenu = false }
-                            )
+                        if (selectedTab == "Photos") {
+                            Icon(Icons.AutoMirrored.Filled.Sort, "Sort")
+                        } else {
+                            Icon(Icons.Default.Add, "Index Photos", tint = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
             }
+        ) { paddingValues ->
+            Box(modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+            ) {
+                // Main Content
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Top Bar with Title and Icons
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = selectedTab,
+                            style = MaterialTheme.typography.headlineLarge.copy(
+                                fontFamily = FontFamily.Serif,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 32.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Row {
+                            IconButton(onClick = {
+                                val intent = Intent(context, SearchActivity::class.java)
+                                context.startActivity(intent)
+                            }) {
+                                Icon(Icons.Default.Search, "Search", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(28.dp))
+                            }
+                            Box {
+                                IconButton(onClick = { showMenu = true }) {
+                                    Icon(Icons.Default.MoreVert, "Options", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(28.dp))
+                                }
+                                DropdownMenu(
+                                    expanded = showMenu,
+                                    onDismissRequest = { showMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Run Model") },
+                                        onClick = {
+                                            showMenu = false
+                                            val intent = Intent(context, ModelActivity::class.java)
+                                            context.startActivity(intent)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (hasPermission) {
+                        if (selectedTab == "Photos") {
+                            PhotoGrid(photos = allPhotos)
+                        } else {
+                            AlbumGrid(albums = albums) { album ->
+                                val intent = Intent(context, AlbumDetailActivity::class.java).apply {
+                                    putExtra("ALBUM_ID", album.id)
+                                    putExtra("ALBUM_NAME", album.name)
+                                }
+                                context.startActivity(intent)
+                            }
+                        }
+                    } else {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("Please grant access to photos", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+
+                // Floating Bottom Navigation (Clean Solid Style)
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 32.dp)
+                        .clip(RoundedCornerShape(50.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f), RoundedCornerShape(50.dp))
+                        .padding(4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TabButton(
+                            text = "Photos",
+                            isSelected = selectedTab == "Photos",
+                            onClick = { selectedTab = "Photos" },
+                            accentColor = MaterialTheme.colorScheme.primary
+                        )
+                        TabButton(
+                            text = "Albums",
+                            isSelected = selectedTab == "Albums",
+                            onClick = { selectedTab = "Albums" },
+                            accentColor = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    fun TabButton(text: String, isSelected: Boolean, onClick: () -> Unit, accentColor: Color) {
+        val haptic = LocalHapticFeedback.current
+        val interactionSource = remember { MutableInteractionSource() }
+        val isPressed by interactionSource.collectIsPressedAsState()
+        val scale by animateFloatAsState(if (isPressed) 0.92f else 1f, label = "scale")
+
+        Box(
+            modifier = Modifier
+                .graphicsLayer(scaleX = scale, scaleY = scale)
+                .clip(RoundedCornerShape(50.dp))
+                .background(if (isSelected) accentColor.copy(alpha = 0.1f) else Color.Transparent)
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null
+                ) {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onClick()
+                }
+                .padding(horizontal = 24.dp, vertical = 12.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = text,
+                color = if (isSelected) accentColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }

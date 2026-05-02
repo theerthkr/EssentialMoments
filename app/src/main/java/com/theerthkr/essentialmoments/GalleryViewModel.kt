@@ -2,6 +2,7 @@ package com.theerthkr.essentialmoments
 
 import android.app.Application
 import android.provider.MediaStore
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +18,14 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     // 2. A public 'pipe' that the UI can only read from
     val albums: StateFlow<List<Album>> = _albums.asStateFlow()
 
+
+    private val _isDescending = MutableStateFlow(true)
+    val isDescending: StateFlow<Boolean> = _isDescending.asStateFlow()
+
+    fun toggleSortOrder() {
+        _isDescending.value = !_isDescending.value
+        _allImages.value = _allImages.value.reversed()
+    }
 
     // 3. The function to trigger the search
     fun fetchAlbums() {
@@ -36,7 +45,7 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                 "${MediaStore.Images.Media.DATE_MODIFIED} DESC"
             )
 
-            cursor?.use {   
+            cursor?.use {
                 val albumsMap = mutableMapOf<String, Album>()
 
 // 1. Get the column indices once before the loop
@@ -73,6 +82,49 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     // A new state flow to hold the images of the selected album
     private val _images = MutableStateFlow<List<MediaImage>>(emptyList())
     val images: StateFlow<List<MediaImage>> = _images.asStateFlow()
+
+    // A new state flow to hold all images
+    private val _allImages = MutableStateFlow<List<MediaImage>>(emptyList())
+    val allImages: StateFlow<List<MediaImage>> = _allImages.asStateFlow()
+
+    fun fetchAllImages() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val imagesList = mutableListOf<MediaImage>() // 1. Create a temporary list
+
+            val projection = arrayOf(
+                MediaStore.Images.Media._ID,
+                MediaStore.Images.Media.DATA, // 2. Added DATA for the file path
+                MediaStore.Images.Media.DATE_ADDED
+            )
+
+            val cursor = getApplication<Application>().contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                null,
+                null,
+                "${MediaStore.Images.Media.DATE_ADDED} DESC"
+            )
+
+            cursor?.use { c ->
+                val idColumn = c.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                val dataColumn = c.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
+                val dateColumn = c.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
+
+                while (c.moveToNext()) {
+                    val id = c.getLong(idColumn)
+                    val path = c.getString(dataColumn) ?: ""
+                    val date = c.getLong(dateColumn)
+
+                    // 3. Build the MediaImage object and add it to our list[cite: 18]
+                    imagesList.add(MediaImage(id, path, "AllPhotos", date))
+                }
+
+                // 4. Push the full list into the StateFlow "pipe"[cite: 18]
+                _allImages.value = imagesList
+                Log.d("GalleryViewModel", "Successfully fetched ${imagesList.size} images.")
+            } ?: Log.e("GalleryViewModel", "Query returned a null cursor")
+        }
+    }
 
     fun fetchImagesForAlbum(albumId: String) {
         viewModelScope.launch(Dispatchers.IO) {

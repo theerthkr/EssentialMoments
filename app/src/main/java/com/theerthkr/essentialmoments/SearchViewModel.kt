@@ -1,28 +1,25 @@
 package com.theerthkr.essentialmoments
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.asFlow
 import androidx.lifecycle.viewModelScope
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import androidx.work.workDataOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-
-// --- Data Models ---
-
-
-data class SearchResult(
-    val uri: String,
-    val score: Float
-)
-
+// --- Data Models (Keep as is) ---
+data class SearchResult(val uri: String, val score: Float)
 
 sealed class IndexingState {
     object Idle : IndexingState()
@@ -30,8 +27,6 @@ sealed class IndexingState {
     data class Done(val count: Int) : IndexingState()
     data class Error(val message: String) : IndexingState()
 }
-
-// --- ViewModel ---
 
 class SearchViewModel(private val appContext: Context) : ViewModel() {
 
@@ -47,11 +42,9 @@ class SearchViewModel(private val appContext: Context) : ViewModel() {
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
-    // Single source of truth: ObjectBox
     private val imageBox = ObjectBox.store.boxFor(ImageEntity::class.java)
 
     init {
-        // Observe background worker status to update the UI banner[cite: 9]
         viewModelScope.launch {
             WorkManager.getInstance(appContext)
                 .getWorkInfosForUniqueWorkLiveData("image_indexing_task")
@@ -71,6 +64,22 @@ class SearchViewModel(private val appContext: Context) : ViewModel() {
         }
     }
 
+    // --- FIXED: Added the missing indexImages function ---
+    fun indexImages(uris: List<Uri>) {
+        val uriStrings = uris.map { it.toString() }.toTypedArray()
+        val inputData = workDataOf("KEY_IMAGE_URIS" to uriStrings)
+
+        val request = OneTimeWorkRequestBuilder<IndexingWorker>()
+            .setInputData(inputData)
+            .build()
+
+        WorkManager.getInstance(appContext).enqueueUniqueWork(
+            "image_indexing_task",
+            ExistingWorkPolicy.REPLACE, // REPLACE ensures the new selection starts immediately
+            request
+        )
+    }
+
     fun onQueryChanged(text: String) {
         _query.value = text
         if (text.isBlank()) _searchResults.value = emptyList()
@@ -78,19 +87,14 @@ class SearchViewModel(private val appContext: Context) : ViewModel() {
 
     fun search(query: String) {
         if (query.isBlank()) return
-
         viewModelScope.launch(Dispatchers.Default) {
-            // PAUSE indexing to free up NPU/CPU for search inference[cite: 9]
             WorkManager.getInstance(appContext).cancelUniqueWork("image_indexing_task")
-
             _isSearching.value = true
             try {
-                // Generate Text Embedding[cite: 2]
                 val textProcessor = SiglipTextProcessor(appContext)
                 val queryEmbedding = textProcessor.getEmbedding(query)
                 textProcessor.close()
 
-                // Perform Similarity Search against ObjectBox data[cite: 9]
                 val allImages = imageBox.all
                 val scored = allImages.map { entity ->
                     val score = cosineSimilarity(queryEmbedding, entity.embedding)
@@ -112,7 +116,6 @@ class SearchViewModel(private val appContext: Context) : ViewModel() {
         return dot
     }
 
-    // Factory to ensure Context is passed correctly[cite: 9]
     class Factory(private val context: Context) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {

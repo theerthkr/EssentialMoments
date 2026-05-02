@@ -5,7 +5,6 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
@@ -19,16 +18,55 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.EssentialMoments">
+        <activity
+            android:name=".OnboardingActivity"
+            android:exported="true"
+            android:label="@string/title_activity_onboarding_activity.kt"
+            android:theme="@style/Theme.EssentialMoments">
+            <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
 
 
 
-        <receiver android:name=".StopIndexingReceiver" android:exported="false" />
+        <activity
+            android:name=".ModelActivity"
+            android:exported="false"
+            android:label="@string/title_activity_model"
+            android:theme="@style/Theme.EssentialMoments" />
+        <activity
+            android:name=".SearchActivity"
+            android:exported="false"
+            android:label="@string/title_activity_search"
+            android:theme="@style/Theme.EssentialMoments"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name=".ImageViewActivity"
+            android:exported="false"
+            android:label="@string/title_activity_image_view"
+            android:theme="@style/Theme.EssentialMoments" />
+        <activity
+            android:name=".AlbumDetailActivity"
+            android:exported="true"
+            android:label="@string/title_activity_album_detail"
+            android:theme="@style/Theme.EssentialMoments" />
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.EssentialMoments">
+
+        </activity>
+        <receiver
+            android:name=".StopIndexingReceiver"
+            android:exported="false" />
+
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"
-            tools:node="merge" />
-
-        <!-- WorkManager: IndexingWorker -->
+            tools:node="merge" /> <!-- WorkManager: IndexingWorker -->
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"
@@ -38,43 +76,6 @@
                 android:name="androidx.work.WorkManagerInitializer"
                 android:value="androidx.startup" />
         </provider>
-
-        <activity
-            android:name=".ModelActivity"
-            android:exported="false"
-            android:label="@string/title_activity_model"
-            android:theme="@style/Theme.EssentialMoments" />
-
-        <activity
-            android:name=".SearchActivity"
-            android:exported="false"
-            android:label="@string/title_activity_search"
-            android:theme="@style/Theme.EssentialMoments"
-            android:windowSoftInputMode="adjustResize" />
-
-        <activity
-            android:name=".ImageViewActivity"
-            android:exported="false"
-            android:label="@string/title_activity_image_view"
-            android:theme="@style/Theme.EssentialMoments" />
-
-        <activity
-            android:name=".AlbumDetailActivity"
-            android:exported="true"
-            android:label="@string/title_activity_album_detail"
-            android:theme="@style/Theme.EssentialMoments" />
-
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:label="@string/app_name"
-            android:theme="@style/Theme.EssentialMoments">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-
     </application>
 
 </manifest>
