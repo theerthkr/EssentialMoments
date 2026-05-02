@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
@@ -30,6 +31,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
+import androidx.compose.runtime.livedata.observeAsState
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 
 // Essential LiteRT 2.1.0 Imports
 import com.google.ai.edge.litert.Accelerator
@@ -44,16 +48,63 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class ModelActivity : ComponentActivity() {
+    private fun startIndexing(uris: List<Uri>) {
+        val uriStrings = uris.map { it.toString() }.toTypedArray()
+        val inputData = androidx.work.workDataOf("KEY_IMAGE_URIS" to uriStrings)
+
+        val indexingRequest = androidx.work.OneTimeWorkRequestBuilder<IndexingWorker>()
+            .setInputData(inputData)
+            .build()
+
+        WorkManager.getInstance(this).enqueueUniqueWork(
+            "image_indexing_task",
+            androidx.work.ExistingWorkPolicy.REPLACE, // Restart if clicked again
+            indexingRequest
+        )
+    }
+    fun triggerIndexing(indexAll: Boolean = false, selectedUris: List<Uri> = emptyList()) {
+        val inputData = androidx.work.workDataOf(
+            "KEY_INDEX_ALL" to indexAll,
+            "KEY_IMAGE_URIS" to selectedUris.map { it.toString() }.toTypedArray()
+        )
+
+        val indexingRequest = androidx.work.OneTimeWorkRequestBuilder<IndexingWorker>()
+            .setInputData(inputData)
+            .build()
+
+        androidx.work.WorkManager.getInstance(this).enqueueUniqueWork(
+            "image_indexing_task",
+            androidx.work.ExistingWorkPolicy.REPLACE,
+            indexingRequest
+        )
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             EssentialMomentsTheme {
+                val workInfos = WorkManager.getInstance(this)
+                    .getWorkInfosForUniqueWorkLiveData("image_indexing_task")
+                    .observeAsState()
+
+                val currentStatus = when (workInfos.value?.firstOrNull()?.state) {
+                    WorkInfo.State.RUNNING -> "Status: Indexing in progress..."
+                    WorkInfo.State.ENQUEUED -> "Status: Waiting to start..."
+                    WorkInfo.State.SUCCEEDED -> "Status: Indexing Complete!"
+                    else -> "Status: Idle"
+                }
+                var selectedUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+
+                val pickMedia = rememberLauncherForActivityResult(
+                    ActivityResultContracts.PickMultipleVisualMedia() // Pick multiple!
+                ) { uris ->
+                    selectedUris = uris
+                }
                 var imageInferenceResult by remember { mutableStateOf("Waiting for image...") }
                 var textInferenceResult by remember { mutableStateOf("Initializing...") }
 
                 // 1. Setup the Photo Picker Launcher
-                val pickMedia = rememberLauncherForActivityResult(
+                val pickMedia1 = rememberLauncherForActivityResult(
                     ActivityResultContracts.PickVisualMedia()
                 ) { uri ->
                     if (uri != null) {
@@ -75,11 +126,32 @@ class ModelActivity : ComponentActivity() {
                 }
 
                 Scaffold(modifier = Modifier) { innerPadding ->
+
                     Column(modifier = Modifier.fillMaxSize().padding(innerPadding).padding(16.dp)) {
 
-                        // 2. Add a Button to trigger the Photo Picker
                         Button(onClick = {
                             pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        }) {
+                            Text("Step A: Pick Images (${selectedUris.size})")
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // 3. The New Button
+                        Button(
+                            onClick = { triggerIndexing(true,selectedUris) },
+                            enabled = selectedUris.isNotEmpty() // Only click if images are picked
+                        ) {
+                            Text("Step B: Start Indexing")
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // 4. Status Display
+                        Text(text = currentStatus, style = MaterialTheme.typography.headlineSmall)
+                        // 2. Add a Button to trigger the Photo Picker
+                        Button(onClick = {
+                            pickMedia1.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                         }) {
                             Text("Pick Image from Gallery")
                         }

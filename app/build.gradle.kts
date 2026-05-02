@@ -1,6 +1,10 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    // Apply the kapt plugin
+    alias(libs.plugins.kotlin.kapt)
+    // Apply the ObjectBox plugin
+    alias(libs.plugins.objectbox)
 }
 
 android {
@@ -76,6 +80,8 @@ dependencies {
 
     implementation("ai.djl.huggingface:tokenizers:0.35.0")
     implementation("ai.djl.android:tokenizer-native:0.33.0")
+
+    implementation("androidx.compose.runtime:runtime-livedata")
 
 
 }
