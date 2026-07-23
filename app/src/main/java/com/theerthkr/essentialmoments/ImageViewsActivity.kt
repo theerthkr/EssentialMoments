@@ -4,30 +4,15 @@ import android.app.Activity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButtonDefaults.Icon
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,11 +24,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.theerthkr.essentialmoments.ui.theme.EssentialMomentsTheme
-import java.time.Clock.offset
 import androidx.activity.compose.LocalActivity
 
 class ImageViewActivity : ComponentActivity() {
@@ -65,18 +48,17 @@ class ImageViewActivity : ComponentActivity() {
 @Composable
 fun ImagePagerScreen(uri: String, name: String) {
     val context = LocalActivity.current as Activity
+    var showInfoSheet by remember { mutableStateOf(false) }
+    var imageInfo by remember { mutableStateOf<ImageInfo?>(null) }
 
-    Box(modifier = Modifier
-        .fillMaxSize()) {
-        // 1. The Main Image (Centered)
+    Box(modifier = Modifier.fillMaxSize()) {
         ZoomableImage(uri)
 
-        // 2. The Minimal Top Bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .background(Color.Black.copy(alpha = 0.4f)) // Slight dark overlay for readability
+                .background(Color.Black.copy(alpha = 0.4f))
                 .padding(horizontal = 4.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -93,36 +75,50 @@ fun ImagePagerScreen(uri: String, name: String) {
                 overflow = TextOverflow.Ellipsis
             )
 
+            IconButton(onClick = {
+                if (imageInfo == null) {
+                    imageInfo = getImageInfo(context, uri)
+                }
+                showInfoSheet = true
+            }) {
+                Icon(Icons.Default.Info, "Info", tint = Color.White)
+            }
+
             IconButton(onClick = { /* Nothing yet */ }) {
                 Icon(Icons.Default.MoreVert, "Options", tint = Color.White)
             }
+        }
+    }
+
+    if (showInfoSheet) {
+        imageInfo?.let { info ->
+            ImageInfoBottomSheet(
+                info = info,
+                onDismissRequest = { showInfoSheet = false }
+            )
         }
     }
 }
 
 @Composable
 fun ZoomableImage(uri: String) {
-    // 1. State to keep track of the transformations
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .clip(RectangleShape) // Keeps the image from "bleeding" over other UI when zoomed
+            .clip(RectangleShape)
             .background(Color.Black)
             .pointerInput(Unit) {
-                // 2. Detect gestures (pinch to zoom, pan to move)
                 detectTransformGestures { _, pan, zoom, _ ->
                     scale *= zoom
-                    // Limit the scale so users don't zoom into infinity
                     scale = scale.coerceIn(1f, 5f)
 
-                    // Only allow panning (moving) if we are zoomed in
                     if (scale > 1f) {
                         offset += pan
                     } else {
-                        offset = Offset.Zero // Reset if zoomed out
+                        offset = Offset.Zero
                     }
                 }
             }
