@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.LocalActivity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,7 +55,7 @@ class SearchActivity : ComponentActivity() {
 
 @Composable
 fun SearchScreen(searchViewModel: SearchViewModel = viewModel()) {
-    val context        = LocalContext.current as Activity
+    val context        = LocalActivity.current as Activity
     val focusRequester = remember { FocusRequester() }
 
     // Collect state
