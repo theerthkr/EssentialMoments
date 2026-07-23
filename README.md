@@ -17,13 +17,13 @@ EssentialMoments is a next-generation Android gallery application that brings th
 * **Beautiful, Fluid Experience:** Built from the ground up with a modern Android UI using Jetpack Compose. Expect a blazing-fast, buttery-smooth, and visually stunning gallery experience.
 * **Smart Organization:** Your moments are automatically categorized into intuitive Smart Albums, making browsing a joy.
 
-## 🚀 Get It Now!
+## 🧸 Get It Now!
 
 Ready to supercharge your gallery? You don't need to be a developer to experience EssentialMoments!
 
-**The signed APK is now available!** Head over to the **[Releases](../../releases)** section to download the latest version and install it directly on your Android device today. Experience the future of photo management.
+**The signed APK is now available!** Head over to the **Releases tab** in this repository to download the latest version and install it directly on your Android device today. Experience the future of photo management.
 
-## 🏗️ For the Curious (Architecture)
+## 🌸 For the Curious (Architecture)
 
 Are you a developer interested in how we packed so much power into a mobile app? EssentialMoments is built using a robust, modern Android stack combining Jetpack Compose, MVVM, background processing, LiteRT, and native C++ execution.
 
