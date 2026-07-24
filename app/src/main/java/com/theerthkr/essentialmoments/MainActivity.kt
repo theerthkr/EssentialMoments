@@ -92,28 +92,36 @@ class MainActivity : ComponentActivity() {
         val DarkSurface = Color(0xFF121212)
         val context = LocalContext.current
         var showMenu by remember { mutableStateOf(false) }
-        var hasPermission by remember { mutableStateOf(false) }
+        var hasMediaPermission by remember { mutableStateOf(false) }
+        var hasNotificationPermission by remember { mutableStateOf(Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) }
 
         val viewModel: GalleryViewModel = viewModel()
         val albums by viewModel.albums.collectAsStateWithLifecycle()
 
         // 1. Permission Launcher
         val permissionLauncher = rememberLauncherForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) { isGranted ->
-            hasPermission = isGranted
-            if (isGranted) viewModel.fetchAlbums()
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) { permissions ->
+            hasMediaPermission = permissions[Manifest.permission.READ_MEDIA_IMAGES] ?: false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                hasNotificationPermission = permissions[Manifest.permission.POST_NOTIFICATIONS] ?: false
+            }
+            if (hasMediaPermission && hasNotificationPermission) viewModel.fetchAlbums()
         }
 
         // 2. Initial Permission Check
         LaunchedEffect(Unit) {
-            permissionLauncher.launch(Manifest.permission.READ_MEDIA_IMAGES)
+            val permissions = mutableListOf(Manifest.permission.READ_MEDIA_IMAGES)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            permissionLauncher.launch(permissions.toTypedArray())
         }
 
         Box(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
 
             // 3. THE GALLERY CONTENT (Drawn first, so it stays behind the top bar)
-            if (hasPermission) {
+            if (hasMediaPermission && hasNotificationPermission) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     // Assuming AlbumGrid is defined elsewhere in your project
                     AlbumGrid(albums = albums) { album ->
@@ -126,7 +134,15 @@ class MainActivity : ComponentActivity() {
                 }
             } else {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Please grant access to photos", color = Color.Gray)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        if (!hasMediaPermission) {
+                            Text("Please grant access to photos", color = Color.Gray)
+                        }
+                        if (!hasNotificationPermission) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Please grant notification access for background indexing", color = Color.Gray)
+                        }
+                    }
                 }
             }
 
