@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -73,7 +74,7 @@ class OnboardingActivity : ComponentActivity() {
 }
 
 enum class OnboardingStep {
-    Splash, Welcome, Permissions, Privacy
+    Splash, Welcome, Permissions, NotificationPermission, Privacy
 }
 
 @OptIn(ExperimentalAnimationApi::class)
@@ -106,7 +107,8 @@ fun OnboardingScreen(
                     }
                 })
                 OnboardingStep.Welcome -> WelcomeStep(onNext = { currentStep = OnboardingStep.Permissions })
-                OnboardingStep.Permissions -> PermissionsStep(onNext = { currentStep = OnboardingStep.Privacy })
+                OnboardingStep.Permissions -> PermissionsStep(onNext = { currentStep = OnboardingStep.NotificationPermission })
+                OnboardingStep.NotificationPermission -> NotificationPermissionStep(onNext = { currentStep = OnboardingStep.Privacy })
                 OnboardingStep.Privacy -> PrivacyStep(onFinished = onFinished)
             }
         }
@@ -142,7 +144,7 @@ fun SplashScreen(onAnimationFinished: () -> Unit) {
 fun WelcomeStep(onNext: () -> Unit) {
     OnboardingTemplate(
         title = "Welcome, Human! 👋",
-        description = "EssentialMoments is your new digital memory palace. We use some fancy AI magic to help you find photos by just describing them.",
+        description = "Essential Moments is your new digital memory palace. We use some fancy AI magic to help you find photos by just describing them.",
         icon = Icons.AutoMirrored.Filled.ArrowForward,
         buttonText = "Let's Go!",
         onButtonClick = onNext
@@ -183,6 +185,47 @@ fun PermissionsStep(onNext: () -> Unit) {
                 onNext()
             } else {
                 launcher.launch(permissions)
+            }
+        }
+    )
+}
+
+@Composable
+fun NotificationPermissionStep(onNext: () -> Unit) {
+    val context = LocalContext.current
+
+    val permission = Manifest.permission.POST_NOTIFICATIONS
+    val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+
+    var isGranted by remember {
+        mutableStateOf(
+            if (needsPermission) {
+                ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+        )
+    }
+
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { result ->
+        isGranted = result
+        if (isGranted) {
+            onNext()
+        }
+    }
+
+    OnboardingTemplate(
+        title = "The \"Ding!\" Part 🔔",
+        description = "We need permission to send notifications when we are indexing your photos in the background. Without it, background indexing won't work when the app is closed. Don't worry, we won't spam you!",
+        icon = Icons.Default.Notifications,
+        buttonText = if (isGranted) "Already Got It!" else "Allow Notifications",
+        onButtonClick = {
+            if (isGranted || !needsPermission) {
+                onNext()
+            } else {
+                launcher.launch(permission)
             }
         }
     )
