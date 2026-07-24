@@ -1,11 +1,11 @@
-# Essential Space
+# Essential Moments
 
 [![Kotlin](https://img.shields.io/badge/kotlin-v1.9.0-blue.svg?logo=kotlin)](http://kotlinlang.org)
 [![Platform](https://img.shields.io/badge/platform-Android-green.svg)](https://developer.android.com)
 [![API](https://img.shields.io/badge/API-24%2B-brightgreen.svg?style=flat)](https://android-arsenal.com/api?level=24)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Essential Space is a privacy-focused photo organiser and a semantic search engine that lets you search for images based on natural language instead of relying on metadata. It uses a clip-to-model to accurately search for text in images and include the context of that text in the search.
+Essential Moments is a privacy-focused photo organiser and a semantic search engine that lets you search for images based on natural language instead of relying on metadata. It uses a clip-to-model to accurately search for text in images and include the context of that text in the search.
 
 It is entirely on-device, meaning there are no cloud servers and no data is ever sent to the cloud. The model comes bundled with the app, ensuring your data remains completely private while delivering excellent performance.
 
