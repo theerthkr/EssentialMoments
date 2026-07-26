@@ -10,6 +10,7 @@ data class Album (
 data class MediaImage(
     val id: Long,
     val uri: String,
+    val path: String,
     val albumId: String,
     val dateTaken: Long
 )

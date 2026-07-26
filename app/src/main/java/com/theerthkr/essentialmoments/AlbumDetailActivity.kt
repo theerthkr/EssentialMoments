@@ -104,9 +104,9 @@ class AlbumDetailActivity : ComponentActivity() {
 //                            .clip(RoundedCornerShape(4.dp))
                             .clickable {
                                 val intent = Intent(context, ImageViewActivity::class.java).apply {
-                                    putExtra("IMAGE_URI", image.uri)
+                                    putExtra("IMAGE_URI", image.path)
                                     // We'll extract the filename from the path
-                                    val fileName = image.uri.substringAfterLast("/")
+                                    val fileName = image.path.substringAfterLast("/")
                                     putExtra("IMAGE_NAME", fileName)
                                 }
                                 context.startActivity(intent)

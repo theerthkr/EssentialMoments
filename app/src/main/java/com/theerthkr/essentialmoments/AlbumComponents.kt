@@ -25,8 +25,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 
+import android.content.Intent
+import androidx.compose.ui.platform.LocalContext
+
 @Composable
 fun PhotoGrid(photos: List<MediaImage>) {
+    val context = LocalContext.current
     LazyVerticalGrid(
         columns = GridCells.Fixed(4), // 4 columns for photos
         contentPadding = PaddingValues(1.dp),
@@ -38,7 +42,14 @@ fun PhotoGrid(photos: List<MediaImage>) {
                 contentDescription = null,
                 modifier = Modifier
                     .aspectRatio(1f)
-                    .padding(1.dp),
+                    .padding(1.dp)
+                    .clickable {
+                        val intent = Intent(context, ImageViewActivity::class.java).apply {
+                            putExtra("IMAGE_URI", photo.path)
+                            putExtra("IMAGE_NAME", photo.path.substringAfterLast("/"))
+                        }
+                        context.startActivity(intent)
+                    },
                 contentScale = ContentScale.Crop
             )
         }
