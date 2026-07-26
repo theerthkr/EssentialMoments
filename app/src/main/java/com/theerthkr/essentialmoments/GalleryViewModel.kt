@@ -1,6 +1,7 @@
 package com.theerthkr.essentialmoments
 
 import android.app.Application
+import android.content.ContentUris
 import android.provider.MediaStore
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -35,7 +36,7 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             val projection = arrayOf(
                 MediaStore.Images.Media.BUCKET_ID,
                 MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
-                MediaStore.Images.Media.DATA
+                MediaStore.Images.Media._ID
             )
             val cursor = contentResolver.query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
@@ -49,15 +50,19 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                 val albumsMap = mutableMapOf<String, Album>()
 
 // 1. Get the column indices once before the loop
-                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_ID)
+                val bucketIdCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_ID)
                 val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
-                val dataCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
 
                 while (cursor.moveToNext()) {
                     // 1. Use ?: to provide fallbacks for null values
-                    val bucketId = cursor.getString(idCol) ?: "unknown_folder"
+                    val bucketId = cursor.getString(bucketIdCol) ?: "unknown_folder"
                     val name = cursor.getString(nameCol) ?: "Unnamed Album"
-                    val imagePath = cursor.getString(dataCol) ?: ""
+                    val imageId = cursor.getLong(idCol)
+                    val contentUri = ContentUris.withAppendedId(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        imageId
+                    ).toString()
 
                     val existingAlbum = albumsMap[bucketId]
 
@@ -69,7 +74,7 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                         albumsMap[bucketId] = Album(
                             id = bucketId,
                             name = name,
-                            coverUri = imagePath,
+                            coverUri = contentUri,
                             photoCount = 1
                         )
                     }
@@ -93,7 +98,6 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
             val projection = arrayOf(
                 MediaStore.Images.Media._ID,
-                MediaStore.Images.Media.DATA, // 2. Added DATA for the file path
                 MediaStore.Images.Media.DATE_ADDED
             )
 
@@ -107,16 +111,18 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
             cursor?.use { c ->
                 val idColumn = c.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-                val dataColumn = c.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
                 val dateColumn = c.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
 
                 while (c.moveToNext()) {
                     val id = c.getLong(idColumn)
-                    val path = c.getString(dataColumn) ?: ""
                     val date = c.getLong(dateColumn)
+                    val contentUri = ContentUris.withAppendedId(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        id
+                    ).toString()
 
                     // 3. Build the MediaImage object and add it to our list[cite: 18]
-                    imagesList.add(MediaImage(id, path, "AllPhotos", date))
+                    imagesList.add(MediaImage(id, contentUri, "AllPhotos", date))
                 }
 
                 // 4. Push the full list into the StateFlow "pipe"[cite: 18]
@@ -134,7 +140,6 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             // 1. We only want these specific columns
             val projection = arrayOf(
                 MediaStore.Images.Media._ID,
-                MediaStore.Images.Media.DATA,
                 MediaStore.Images.Media.DATE_TAKEN
             )
 
@@ -152,13 +157,15 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
             cursor?.use {
                 val idCol = it.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-                val dataCol = it.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
 
                 while (it.moveToNext()) {
                     val id = it.getLong(idCol)
-                    val path = it.getString(dataCol)
+                    val contentUri = ContentUris.withAppendedId(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        id
+                    ).toString()
 
-                    imagesList.add(MediaImage(id, path, albumId, 0L))
+                    imagesList.add(MediaImage(id, contentUri, albumId, 0L))
                 }
             }
 
