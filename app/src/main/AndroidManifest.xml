@@ -59,6 +59,11 @@
             android:theme="@style/Theme.EssentialMoments">
 
         </activity>
+        <activity
+            android:name=".RemoteSearchActivity"
+            android:exported="false"
+            android:label="Remote Search Results"
+            android:theme="@style/Theme.EssentialMoments" />
         <receiver
             android:name=".StopIndexingReceiver"
             android:exported="false" />

@@ -53,8 +53,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import android.widget.Toast
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.animation.core.animateFloatAsState
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.graphics.graphicsLayer
@@ -163,6 +166,34 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        val coroutineScope = rememberCoroutineScope()
+
+        val exportEmbeddingsLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.CreateDocument("application/json")
+        ) { uri ->
+            uri?.let {
+                coroutineScope.launch {
+                    val success = LaptopModuleUtils.exportEmbeddingsToJson(context, it)
+                    if (success) {
+                        Toast.makeText(context, "Embeddings exported successfully!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Failed to export embeddings.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+
+        val importResultsLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument()
+        ) { uri ->
+            uri?.let {
+                val intent = Intent(context, RemoteSearchActivity::class.java).apply {
+                    putExtra("JSON_URI", it.toString())
+                }
+                context.startActivity(intent)
+            }
+        }
+
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             floatingActionButton = {
@@ -247,6 +278,20 @@ class MainActivity : ComponentActivity() {
                                             showMenu = false
                                             val intent = Intent(context, ModelActivity::class.java)
                                             context.startActivity(intent)
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Export Embeddings") },
+                                        onClick = {
+                                            showMenu = false
+                                            exportEmbeddingsLauncher.launch("embeddings.json")
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Import Search Results") },
+                                        onClick = {
+                                            showMenu = false
+                                            importResultsLauncher.launch(arrayOf("application/json"))
                                         }
                                     )
                                 }
