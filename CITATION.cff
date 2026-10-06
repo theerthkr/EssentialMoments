@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use Essential Moments in your research or project, please cite it as below."
+authors:
+  - family-names: "K R"
+    given-names: "Theerth"
+title: "Essential Moments: On-Device Semantic Photo Search for Android"
+version: 1.0.0
+date-released: 2024-08-01
+url: "https://github.com/theerthkr/EssentialMoments"
+keywords:
+  - "android"
+  - "on-device-ml"
+  - "siglip2"
+  - "litert"
+  - "semantic-search"
+  - "computer-vision"
