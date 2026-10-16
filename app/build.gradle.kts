@@ -5,11 +5,7 @@ plugins {
 
 android {
     namespace = "com.theerthkr.essentialmoments"
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
-    }
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.theerthkr.essentialmoments"
@@ -73,9 +69,4 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")
     implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("androidx.navigation:navigation-compose:2.8.0")
-
-    implementation("ai.djl.huggingface:tokenizers:0.35.0")
-    implementation("ai.djl.android:tokenizer-native:0.33.0")
-
-
 }
