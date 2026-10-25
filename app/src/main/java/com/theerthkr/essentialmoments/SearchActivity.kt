@@ -1,378 +1,310 @@
 package com.theerthkr.essentialmoments
 
-import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.work.WorkManager
 import coil.compose.AsyncImage
 import com.theerthkr.essentialmoments.ui.theme.EssentialMomentsTheme
+import kotlinx.coroutines.delay
+
+private val SEARCH_MESSAGES = listOf(
+    "Dusting off the neurons…",
+    "Asking the vectors nicely…",
+    "Doing math at the speed of light…",
+    "Squinting at your photos…",
+    "Consulting the embedding oracle…",
+    "Wrangling 768 dimensions…",
+    "Teaching math to look at pictures…",
+    "Almost there, probably…",
+    "Convincing floats to cooperate…",
+    "Running cosine yoga…",
+)
 
 class SearchActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge() // Ensures modern immersive UI
         setContent {
             EssentialMomentsTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    SearchScreen()
+                    SearchScreen(onBack = { finish() })
                 }
             }
         }
     }
+
+    override fun onStop() {
+        super.onStop()
+        // RESUME indexing worker when the user leaves the search screen[cite: 16]
+        resumeIndexing()
+    }
+
+    private fun resumeIndexing() {
+        val inputData = androidx.work.workDataOf("KEY_INDEX_ALL" to true)
+        val indexingRequest = androidx.work.OneTimeWorkRequestBuilder<IndexingWorker>()
+            .setInputData(inputData)
+            .build()
+
+        WorkManager.getInstance(this).enqueueUniqueWork(
+            "image_indexing_task",
+            androidx.work.ExistingWorkPolicy.KEEP, // Keep existing work instead of resetting[cite: 16]
+            indexingRequest
+        )
+        Log.d("SearchActivity", "Resumed Indexing Worker via onStop()[cite: 16]")
+    }
 }
 
+// --- Top-Level Composables (Placed outside class to avoid receiver errors) ---
+
 @Composable
-fun SearchScreen(searchViewModel: SearchViewModel = viewModel()) {
-    val context        = LocalContext.current as Activity
-    val focusRequester = remember { FocusRequester() }
+fun SearchScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val vm: SearchViewModel = viewModel(factory = SearchViewModel.Factory(context))
 
-    // Collect state
-    val query          by searchViewModel.query.collectAsStateWithLifecycle()
-    val results        by searchViewModel.searchResults.collectAsStateWithLifecycle()
-    val isSearching    by searchViewModel.isSearching.collectAsStateWithLifecycle()
-    val indexingState  by searchViewModel.indexingState.collectAsStateWithLifecycle()
+    val query by vm.query.collectAsStateWithLifecycle()
+    val searchResults by vm.searchResults.collectAsStateWithLifecycle()
+    val isSearching by vm.isSearching.collectAsStateWithLifecycle()
+    val indexingState by vm.indexingState.collectAsStateWithLifecycle()
 
-    // Auto-focus keyboard when screen opens
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    val focusManager = LocalFocusManager.current
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-    ) {
 
-        // ── Top bar: back button + search field ────────────────────
+
+    Column(modifier = Modifier.fillMaxSize()) {
+
+        // ── Top Bar (Admin UI Merged) ─────────────────────────────
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 8.dp),
+                .statusBarsPadding()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = { context.finish() }) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
             }
 
-            BasicTextField(
-                value          = query,
-                onValueChange  = { searchViewModel.onQueryChanged(it) },
-                modifier       = Modifier
+            Box(
+                modifier = Modifier
                     .weight(1f)
-                    .focusRequester(focusRequester)
                     .height(48.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(24.dp)
-                    )
-                    .padding(horizontal = 20.dp, vertical = 13.dp),
-                textStyle = TextStyle(
-                    color    = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 16.sp
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                singleLine  = true,
-                decorationBox = { innerTextField ->
-                    if (query.isEmpty()) {
-                        Text(
-                            "Search your photos…",
-                            color    = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 16.sp
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(modifier = Modifier.weight(1f)) {
+                        if (query.isEmpty()) {
+                            Text("Search your photos…", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                        }
+                        BasicTextField(
+                            value = query,
+                            onValueChange = { vm.onQueryChanged(it) },
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 15.sp),
+                            singleLine = true,
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = {
+                                // Pause background work before intensive search[cite: 16]
+                                WorkManager.getInstance(context).cancelUniqueWork("image_indexing_task")
+                                focusManager.clearFocus()
+                                vm.search(query)
+                            })
                         )
                     }
-                    innerTextField()
-                }
-            )
-
-            // Clear button — only visible when there's text
-            AnimatedVisibility(visible = query.isNotEmpty()) {
-                IconButton(onClick = { searchViewModel.onQueryChanged("") }) {
-                    Icon(
-                        Icons.Default.Clear,
-                        contentDescription = "Clear",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = { vm.onQueryChanged("") }) {
+                            Icon(Icons.Default.Clear, "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
             }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+
         }
 
-        // ── Indexing status banner ─────────────────────────────────
-        IndexingBanner(
-            state          = indexingState,
-            onStartIndexing = { searchViewModel.startIndexing() }
-        )
+        HorizontalDivider()
 
-        // ── Body ───────────────────────────────────────────────────
+        // ── Content Area ──────────────────────────────────────────
         Box(modifier = Modifier.fillMaxSize()) {
             when {
-                // Searching spinner
-                isSearching -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator()
-                            Spacer(Modifier.height(12.dp))
-                            Text("Searching…", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-
-                // Results grid
-                results.isNotEmpty() -> {
-                    Column {
-                        Text(
-                            "${results.size} results for \"$query\"",
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                            style    = MaterialTheme.typography.bodySmall,
-                            color    = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        SearchResultsGrid(
-                            images  = results,
-                            onClick = { image ->
-                                val intent = Intent(context, ImageViewActivity::class.java).apply {
-                                    putExtra("IMAGE_URI",  image.uri)
-                                    putExtra("IMAGE_NAME", image.id.toString())
-                                }
-                                context.startActivity(intent)
-                            }
-                        )
-                    }
-                }
-
-                // No results (query typed but nothing found)
-                query.isNotEmpty() && !isSearching -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                "No results for \"$query\"",
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                if (indexingState is IndexingState.Idle || indexingState is IndexingState.Queued)
-                                    "Try indexing your photos first"
-                                else
-                                    "Try a different search term",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-                }
-
-                // Empty state — nothing typed yet
+                isSearching -> SearchingAnimation()
+                query.isEmpty() -> EmptyQueryHint()
+                searchResults.isEmpty() -> NoResultsHint(query = query)
                 else -> {
-                    EmptySearchState(indexingState)
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        items(searchResults, key = { it.uri }) { result ->
+                            AsyncImage(
+                                model = result.uri,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .aspectRatio(1f)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .clickable {
+                                        val intent = Intent(context, ImageViewActivity::class.java).apply {
+                                            putExtra("IMAGE_URI", result.uri)
+                                            putExtra("IMAGE_NAME", result.uri.substringAfterLast("/"))
+                                        }
+                                        context.startActivity(intent)
+                                    }
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-// ── Indexing banner ────────────────────────────────────────────────
-
+// Support Composables for Animation and Hints from source 15[cite: 15]
 @Composable
-private fun IndexingBanner(
-    state: IndexingState,
-    onStartIndexing: () -> Unit
-) {
-    AnimatedVisibility(
-        visible = state !is IndexingState.Done,
-        enter   = expandVertically(),
-        exit    = shrinkVertically()
-    ) {
-        when (state) {
-            is IndexingState.Idle -> {
-                // Prompt user to start indexing
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment     = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        "Photos not indexed yet",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.weight(1f)
-                    )
-                    TextButton(onClick = onStartIndexing) {
-                        Text("Index now")
-                    }
-                }
-            }
-
-            is IndexingState.Queued -> {
-                LinearProgressBanner(
-                    label    = "Indexing queued…",
-                    progress = null   // indeterminate
-                )
-            }
-
-            is IndexingState.Running -> {
-                val progress = if (state.total > 0)
-                    state.indexed.toFloat() / state.total.toFloat()
-                else null
-
-                LinearProgressBanner(
-                    label    = "Indexing: ${state.indexed} / ${state.total}" +
-                            if (state.failed > 0) "  (${state.failed} failed)" else "",
-                    progress = progress
-                )
-            }
-
-            is IndexingState.Failed -> {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.errorContainer)
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment     = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        "Indexing failed",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.weight(1f)
-                    )
-                    TextButton(onClick = onStartIndexing) {
-                        Text("Retry")
-                    }
-                }
-            }
-
-            is IndexingState.Done -> { /* banner hidden by AnimatedVisibility */ }
+private fun SearchingAnimation() {
+    var messageIndex by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        val shuffled = SEARCH_MESSAGES.shuffled()
+        var i = 0
+        while (true) {
+            messageIndex = i % shuffled.size
+            delay(2000)
+            i++
         }
     }
-}
 
-@Composable
-private fun LinearProgressBanner(label: String, progress: Float?) {
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val scale by infiniteTransition.animateFloat(
+        initialValue = 0.85f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = EaseInOutSine),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "scale"
+    )
+
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.secondaryContainer)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSecondaryContainer
-        )
-        Spacer(Modifier.height(4.dp))
-        if (progress != null) {
-            LinearProgressIndicator(
-                progress    = { progress },
-                modifier    = Modifier.fillMaxWidth(),
-            )
-        } else {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        }
-    }
-}
-
-// ── Results grid ───────────────────────────────────────────────────
-
-@Composable
-private fun SearchResultsGrid(
-    images: List<MediaImage>,
-    onClick: (MediaImage) -> Unit
-) {
-    LazyVerticalGrid(
-        columns        = GridCells.Fixed(3),
-        contentPadding = PaddingValues(2.dp)
-    ) {
-        items(images, key = { it.id }) { image ->
-            AsyncImage(
-                model              = image.uri,
-                contentDescription = null,
-                modifier           = Modifier
-                    .aspectRatio(1f)
-                    .padding(1.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .clickable { onClick(image) },
-                contentScale = ContentScale.Crop
-            )
-        }
-    }
-}
-
-// ── Empty / idle state ─────────────────────────────────────────────
-
-@Composable
-private fun EmptySearchState(indexingState: IndexingState) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(
-            horizontalAlignment   = Alignment.CenterHorizontally,
-            verticalArrangement   = Arrangement.spacedBy(8.dp),
-            modifier              = Modifier.padding(32.dp)
+        Box(
+            modifier = Modifier
+                .size((64 * scale).dp)
+                .clip(RoundedCornerShape(50))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
+            contentAlignment = Alignment.Center
         ) {
-            when (indexingState) {
-                is IndexingState.Done -> {
-                    Text(
-                        "Search your ${indexingState.total} indexed photos",
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                    Text(
-                        "Try: \"sunset\", \"dog\", \"birthday cake\"",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                is IndexingState.Running -> {
-                    Text(
-                        "Indexing in progress…",
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                    Text(
-                        "You can search the photos indexed so far",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                else -> {
-                    Text(
-                        "Your photos aren't indexed yet",
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                    Text(
-                        "Tap \"Index now\" above to enable semantic search",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = null,
+                modifier = Modifier.size((32 * scale).dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
         }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        AnimatedContent(
+            targetState = messageIndex,
+            transitionSpec = {
+                (fadeIn(tween(400)) + slideInVertically { it / 3 })
+                    .togetherWith(fadeOut(tween(300)) + slideOutVertically { -it / 3 })
+            },
+            label = "message"
+        ) { idx ->
+            Text(
+                text = SEARCH_MESSAGES[idx % SEARCH_MESSAGES.size],
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 32.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyQueryHint() {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(text = "🔍", fontSize = 48.sp)
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Search your photos", style = MaterialTheme.typography.titleMedium)
+        Text("Try anything — \"sunset\", \"dog\", \"birthday\"", color = Color.Gray)
+    }
+}
+
+@Composable
+private fun NoResultsHint(query: String) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(text = "🙁", fontSize = 48.sp)
+        Text("No results for \"$query\"", style = MaterialTheme.typography.titleMedium)
     }
 }

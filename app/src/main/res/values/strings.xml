@@ -1,9 +1,3 @@
 <resources>
-    <string name="app_name">EssentialMoments</string>
-
-    <string name="title_activity_album_detail">AlbumDetailActivity</string>
-    <string name="title_activity_image_view">ImageViewActivity</string>
-    <string name="title_activity_search">SearchActivity</string>
-    <string name="title_activity_run_model">RunModelActivity</string>
-    <string name="title_activity_model">ModelActivity</string>
+    <string name="app_name">Essential Moments</string>
 </resources>
