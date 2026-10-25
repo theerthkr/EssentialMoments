@@ -1,0 +1,9 @@
+# Domain Glossary
+
+- **Embedding**: An L2-normalized `FloatArray` in a shared multimodal vector space representing either a photo or a text query. Because all embeddings are L2-normalized at creation time, cosine similarity between any two embeddings reduces to their dot product.
+- **ImageEmbedder**: The backend-agnostic image embedding interface (`ml/ImageEmbedder.kt`) that transforms a photo (`Uri` or `Bitmap`) into an L2-normalized **Embedding**, encapsulating preprocessing, model inference, and normalization.
+- **TextEmbedder**: The backend-agnostic text embedding interface (`ml/TextEmbedder.kt`) that transforms a search query string into an L2-normalized **Embedding**, encapsulating tokenization, model inference, and normalization.
+- **EmbeddingModelFactory**: The single factory (`ml/EmbeddingModelFactory.kt`) providing active `ImageEmbedder` and `TextEmbedder` instances so callers remain decoupled from specific ML runtimes (LiteRT, ONNX Runtime, etc.).
+- **LiteRtSiglipImageEmbedder**: The LiteRT SigLIP 2 image embedding implementation (`ml/litert/LiteRtSiglipImageEmbedder.kt`). Owns bitmap decoding/recycling, `224×224` scaling, ARGB-to-NCHW `[-1.0, 1.0]` tensor conversion, LiteRT model compilation with hardware accelerator fallback (`NPU -> GPU -> CPU`), pre-allocated tensor buffer reuse, and L2 normalization.
+- **LiteRtSiglipTextEmbedder**: The LiteRT SigLIP 2 text embedding implementation (`ml/litert/LiteRtSiglipTextEmbedder.kt`). Owns Gemma 256k BPE tokenization (`64` tokens with `<eos>` and `<pad>`), LiteRT model compilation with hardware accelerator fallback (`NPU -> GPU -> CPU`), tensor buffer reuse, and L2 normalization.
+- **NCHW Tensor**: Channel-first contiguous `FloatArray` of size `1 × 3 × 224 × 224` (`150,528` floats: all Red values, then all Green values, then all Blue values, rescaled from `[0, 255]` to `[-1.0, 1.0]`) required by the SigLIP 2 vision model.

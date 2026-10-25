@@ -12,8 +12,7 @@ import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
-import com.google.ai.edge.litert.Accelerator
-import com.google.ai.edge.litert.CompiledModel
+import com.theerthkr.essentialmoments.ml.EmbeddingModelFactory
 
 
 class IndexingWorker(appContext: Context, workerParams: WorkerParameters) :
@@ -44,66 +43,53 @@ class IndexingWorker(appContext: Context, workerParams: WorkerParameters) :
         }
 
 
-        val processor = SiglipImageProcessor() //[cite: 1]
         val imageBox = ObjectBox.store.boxFor(ImageEntity::class.java) //
 
-        Log.d(TAG, "Loading AI Model on NPU...")
-        val model = CompiledModel.create(
-            applicationContext.assets,
-            "siglip2_base_patch16-224.tflite",
-            CompiledModel.Options(Accelerator.NPU)
-        ) //
+        Log.d(TAG, "Loading AI Model...")
+        val embedder = try {
+            EmbeddingModelFactory.createImageEmbedder(applicationContext)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize ImageEmbedder: ${e.message}")
+            return Result.failure()
+        }
 
         try {
-            for ((index, uriString) in finalUriStrings.withIndex()) {
-                // IMPORTANT: Check if the user paused the worker (e.g., started the Text Model)
-                if (isStopped) {
-                    Log.w(TAG, "Worker stopped signal received. Pausing at image $index.")
-                    return Result.retry()
+            embedder.use { imageEmbedder ->
+                for ((index, uriString) in finalUriStrings.withIndex()) {
+                    // IMPORTANT: Check if the user paused the worker (e.g., started the Text Model)
+                    if (isStopped) {
+                        Log.w(TAG, "Worker stopped signal received. Pausing at image $index.")
+                        return Result.retry()
+                    }
+
+                    Log.d(TAG, "Checking if image is already indexed: $uriString")
+
+
+                    val query = imageBox.query(ImageEntity_.uri.equal(uriString)).build()
+
+                    // 2. Try to find the first match[cite: 4]
+                    val existingImage = query.findFirst()
+
+                    // 3. Close the query to save memory (Important in a loop!)[cite: 4]
+                    query.close()
+
+                    if (existingImage != null) {
+                        Log.d(TAG, "Skipping: Image already exists in ObjectBox.")
+                        continue // Skip to the next image in the loop
+                    }
+
+                    Log.d(TAG, "Processing image ${index + 1}/${finalUriStrings.size}: $uriString")
+
+                    // 2. Compute L2-normalized image embedding via ImageEmbedder
+                    val finalEmbedding = imageEmbedder.getEmbedding(Uri.parse(uriString)) ?: continue
+                    val preview = finalEmbedding.take(5).joinToString(", ")
+                    Log.d(TAG, "Embedding Generated! Size: ${finalEmbedding.size} | Preview: [$preview...]")
+
+                    // 4. Save to ObjectBox[cite: 4]
+                    imageBox.put(ImageEntity(uri = uriString, embedding = finalEmbedding))
+                    Log.i(TAG, "Successfully indexed image ${index + 1}: $uriString")
+                    updateNotification(index + 1, finalUriStrings.size)
                 }
-
-                Log.d(TAG, "Checking if image is already indexed: $uriString")
-
-
-                val query = imageBox.query(ImageEntity_.uri.equal(uriString)).build()
-
-                // 2. Try to find the first match[cite: 4]
-                val existingImage = query.findFirst()
-
-                // 3. Close the query to save memory (Important in a loop!)[cite: 4]
-                query.close()
-
-                if (existingImage != null) {
-                    Log.d(TAG, "Skipping: Image already exists in ObjectBox.")
-                    continue // Skip to the next image in the loop
-                }
-
-                Log.d(TAG, "Processing image ${index + 1}/${finalUriStrings.size}: $uriString")
-
-                // 2. Preprocess using your custom SiglipImageProcessor[cite: 1]
-                val bitmap = uriToBitmap(applicationContext, Uri.parse(uriString)) ?: continue
-                val resized = processor.resize(bitmap, 224, 224)
-                val hwcPixels = processor.extractHwcPixels(resized)
-                val rescaled = processor.rescale(hwcPixels, 255.0f)
-                val normalized = processor.normalize(rescaled, floatArrayOf(0.5f, 0.5f, 0.5f), floatArrayOf(0.5f, 0.5f, 0.5f))
-                val nchwFloatArray = processor.transposeHwcToNchw(normalized, 224, 224)
-
-                // 3. Run Inference to get the embedding[cite: 2]
-                val inputBuffers = model.createInputBuffers()
-                val outputBuffers = model.createOutputBuffers()
-                inputBuffers[0].writeFloat(nchwFloatArray)
-                model.run(inputBuffers, outputBuffers)
-
-                val rawOutput = outputBuffers[0].readFloat()
-                val finalEmbedding = l2Normalize(rawOutput) // Normalize for semantic search[cite: 2]
-                val preview = finalEmbedding.take(5).joinToString(", ")
-                Log.d(TAG, "Embedding Generated! Size: ${finalEmbedding.size} | Preview: [$preview...]")
-
-                // 4. Save to ObjectBox[cite: 4]
-                imageBox.put(ImageEntity(uri = uriString, embedding = finalEmbedding))
-                Log.i(TAG, "Successfully indexed image ${index + 1}: $uriString")
-                updateNotification(index + 1, finalUriStrings.size)
-                bitmap.recycle() // Keep memory usage low
             }
 
             Log.d(TAG, "Indexing complete! Processed all ${finalUriStrings.size} images.")
@@ -112,8 +98,6 @@ class IndexingWorker(appContext: Context, workerParams: WorkerParameters) :
         } catch (e: Exception) {
             Log.e(TAG, "Critical error during indexing: ${e.message}")
             return Result.retry()
-        } finally {
-            model.close() // Always release AI resources![cite: 2]
         }
 
     }

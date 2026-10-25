@@ -5,13 +5,13 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.asFlow
 import androidx.lifecycle.viewModelScope
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import com.theerthkr.essentialmoments.ml.EmbeddingModelFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -47,8 +47,7 @@ class SearchViewModel(private val appContext: Context) : ViewModel() {
     init {
         viewModelScope.launch {
             WorkManager.getInstance(appContext)
-                .getWorkInfosForUniqueWorkLiveData("image_indexing_task")
-                .asFlow()
+                .getWorkInfosForUniqueWorkFlow("image_indexing_task")
                 .collect { infoList ->
                     val workInfo = infoList.firstOrNull()
                     _indexingState.value = when (workInfo?.state) {
@@ -91,9 +90,9 @@ class SearchViewModel(private val appContext: Context) : ViewModel() {
             WorkManager.getInstance(appContext).cancelUniqueWork("image_indexing_task")
             _isSearching.value = true
             try {
-                val textProcessor = SiglipTextProcessor(appContext)
-                val queryEmbedding = textProcessor.getEmbedding(query)
-                textProcessor.close()
+                val queryEmbedding = EmbeddingModelFactory.createTextEmbedder(appContext).use { textEmbedder ->
+                    textEmbedder.getEmbedding(query)
+                }
 
                 val allImages = imageBox.all
                 val scored = allImages.map { entity ->

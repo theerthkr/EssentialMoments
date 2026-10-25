@@ -84,10 +84,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
-import com.google.accompanist.permissions.isGranted
-import com.google.accompanist.permissions.rememberPermissionState
 import com.theerthkr.essentialmoments.ui.theme.EssentialMomentsTheme
-import kotlin.math.roundToInt
 import kotlin.jvm.java
 
 // ... imports (Ensure you have android.content.Intent and androidx.compose.runtime.*)

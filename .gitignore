@@ -188,5 +188,7 @@ fabric.properties
 
 /app/src/main/assets/siglip2_base_patch16-224_f16.tflite
 app/src/main/assets/siglip2_text_only.tflite
+app/src/main/assets/*.tflite
 /app/src/main/assets/test_tensor.bin
 app/src/main/assets/text_input_ids.bin
+.agents/

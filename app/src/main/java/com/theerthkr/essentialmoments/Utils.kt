@@ -6,6 +6,7 @@ import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import kotlin.math.sqrt
 
 /**
  * Converts an image URI into a Bitmap so the AI model can process it.
@@ -35,7 +36,7 @@ fun l2Normalize(embedding: FloatArray): FloatArray {
     for (value in embedding) {
         sumOfSquares += value * value
     }
-    val magnitude = kotlin.math.sqrt(sumOfSquares)
+    val magnitude = sqrt(sumOfSquares)
     if (magnitude == 0.0f) return embedding
 
     val normalized = FloatArray(embedding.size)
