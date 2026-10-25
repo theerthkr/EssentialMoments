@@ -1,6 +1,9 @@
 package com.theerthkr.essentialmoments
 
+import com.theerthkr.essentialmoments.ml.EmbeddingModelFactory
+import com.theerthkr.essentialmoments.ml.SiglipImagePreprocessor
 import com.theerthkr.essentialmoments.ml.litert.LiteRtSiglipImageEmbedder
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import kotlin.math.sqrt
@@ -21,7 +24,7 @@ class SiglipImageProcessorTest {
             0xFF808080.toInt()
         )
 
-        val nchw = LiteRtSiglipImageEmbedder.argbToNormalizedNchw(pixels, width = 2, height = 2)
+        val nchw = SiglipImagePreprocessor.argbToNormalizedNchw(pixels, width = 2, height = 2)
         assertEquals(3 * 4, nchw.size)
 
         val expectedMid = ((128f / 255f) - 0.5f) / 0.5f
@@ -43,6 +46,30 @@ class SiglipImageProcessorTest {
         assertEquals(-1.0f, nchw[9], 1e-5f)
         assertEquals(1.0f, nchw[10], 1e-5f)
         assertEquals(expectedMid, nchw[11], 1e-5f)
+
+        // Retained LiteRT adapter delegates to the exact same NCHW preprocessing
+        val liteRtNchw = LiteRtSiglipImageEmbedder.argbToNormalizedNchw(pixels, width = 2, height = 2)
+        assertArrayEquals(nchw, liteRtNchw, 1e-6f)
+    }
+
+    @Test
+    fun `tokenIdsToInt64 widens 32-bit BPE token IDs to 64-bit LongArray for ONNX input_ids`() {
+        val tokenIds = intArrayOf(235250, 2686, 576, 476, 9786, 4401, 1, 0)
+        val widened = SiglipImagePreprocessor.tokenIdsToInt64(tokenIds)
+
+        assertArrayEquals(
+            longArrayOf(235250L, 2686L, 576L, 476L, 9786L, 4401L, 1L, 0L),
+            widened
+        )
+    }
+
+    @Test
+    fun `EmbeddingModelFactory defaults to ONNX_INT8 while retaining LITERT`() {
+        assertEquals(EmbeddingModelFactory.Backend.ONNX_INT8, EmbeddingModelFactory.activeBackend)
+        assertEquals(
+            listOf(EmbeddingModelFactory.Backend.ONNX_INT8, EmbeddingModelFactory.Backend.LITERT),
+            EmbeddingModelFactory.Backend.entries
+        )
     }
 
     @Test

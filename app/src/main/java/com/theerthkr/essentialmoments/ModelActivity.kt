@@ -29,8 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.work.WorkInfo
-import androidx.work.WorkManager
+import com.theerthkr.essentialmoments.indexing.IndexingScheduler
+import com.theerthkr.essentialmoments.indexing.IndexingState
 import com.theerthkr.essentialmoments.ml.EmbeddingModelFactory
 import com.theerthkr.essentialmoments.ui.theme.EssentialMomentsTheme
 import kotlinx.coroutines.Dispatchers
@@ -40,50 +40,28 @@ import java.io.File
 import java.io.FileOutputStream
 
 class ModelActivity : ComponentActivity() {
-    private fun startIndexing(uris: List<Uri>) {
-        val uriStrings = uris.map { it.toString() }.toTypedArray()
-        val inputData = androidx.work.workDataOf("KEY_IMAGE_URIS" to uriStrings)
 
-        val indexingRequest = androidx.work.OneTimeWorkRequestBuilder<IndexingWorker>()
-            .setInputData(inputData)
-            .build()
-
-        WorkManager.getInstance(this).enqueueUniqueWork(
-            "image_indexing_task",
-            androidx.work.ExistingWorkPolicy.REPLACE, // Restart if clicked again
-            indexingRequest
-        )
-    }
     fun triggerIndexing(indexAll: Boolean = false, selectedUris: List<Uri> = emptyList()) {
-        val inputData = androidx.work.workDataOf(
-            "KEY_INDEX_ALL" to indexAll,
-            "KEY_IMAGE_URIS" to selectedUris.map { it.toString() }.toTypedArray()
-        )
-
-        val indexingRequest = androidx.work.OneTimeWorkRequestBuilder<IndexingWorker>()
-            .setInputData(inputData)
-            .build()
-
-        androidx.work.WorkManager.getInstance(this).enqueueUniqueWork(
-            "image_indexing_task",
-            androidx.work.ExistingWorkPolicy.REPLACE,
-            indexingRequest
-        )
+        if (indexAll) {
+            IndexingScheduler.scheduleIndexAll(this)
+        } else {
+            IndexingScheduler.scheduleIndexUris(this, selectedUris.map { it.toString() })
+        }
     }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             EssentialMomentsTheme {
-                val workInfos by WorkManager.getInstance(this)
-                    .getWorkInfosForUniqueWorkFlow("image_indexing_task")
-                    .collectAsStateWithLifecycle(emptyList())
+                val indexerState by (application as App).photoIndexer.state
+                    .collectAsStateWithLifecycle()
 
-                val currentStatus = when (workInfos.firstOrNull()?.state) {
-                    WorkInfo.State.RUNNING -> "Status: Indexing in progress..."
-                    WorkInfo.State.ENQUEUED -> "Status: Waiting to start..."
-                    WorkInfo.State.SUCCEEDED -> "Status: Indexing Complete!"
-                    else -> "Status: Idle"
+                val currentStatus = when (val s = indexerState) {
+                    is IndexingState.Indexing -> "Status: Indexing ${s.current}/${s.total}..."
+                    is IndexingState.Done -> "Status: Indexing Complete! (${s.count} new)"
+                    is IndexingState.Error -> "Status: Error: ${s.message}"
+                    is IndexingState.Idle -> "Status: Idle"
                 }
                 var selectedUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
 
@@ -139,10 +117,10 @@ class ModelActivity : ComponentActivity() {
 
                         // 3. The New Button
                         Button(
-                            onClick = { triggerIndexing(true,selectedUris) },
+                            onClick = { triggerIndexing(false, selectedUris) },
                             enabled = selectedUris.isNotEmpty() // Only click if images are picked
                         ) {
-                            Text("Step B: Start Indexing")
+                            Text("Step B: Start Indexing (${selectedUris.size} selected)")
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))

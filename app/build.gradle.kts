@@ -40,6 +40,9 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -63,6 +66,7 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     implementation("com.google.ai.edge.litert:litert:2.1.0")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.26.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")
     implementation("io.coil-kt:coil-compose:2.6.0")

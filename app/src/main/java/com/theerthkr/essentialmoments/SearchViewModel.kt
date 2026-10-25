@@ -6,35 +6,38 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkInfo
-import androidx.work.WorkManager
-import androidx.work.workDataOf
+import com.theerthkr.essentialmoments.indexing.IndexingScheduler
+import com.theerthkr.essentialmoments.indexing.IndexingState
 import com.theerthkr.essentialmoments.ml.EmbeddingModelFactory
+import com.theerthkr.essentialmoments.ml.InferenceArbiter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-// --- Data Models (Keep as is) ---
 data class SearchResult(val uri: String, val score: Float)
 
-sealed class IndexingState {
-    object Idle : IndexingState()
-    data class Indexing(val current: Int, val total: Int) : IndexingState()
-    data class Done(val count: Int) : IndexingState()
-    data class Error(val message: String) : IndexingState()
-}
-
+/**
+ * ViewModel for photo search.
+ *
+ * Interacts only with deep module interfaces:
+ * - [PhotoIndexer.state] as single source of truth for indexing progress
+ * - [IndexingScheduler] for triggering background index work
+ * - [VectorIndex] for HNSW approximate nearest-neighbor search (top-500) and exact scan
+ * - [InferenceArbiter] for prioritizing interactive text queries over background jobs
+ */
 class SearchViewModel(private val appContext: Context) : ViewModel() {
 
-    private val _indexingState = MutableStateFlow<IndexingState>(IndexingState.Idle)
-    val indexingState: StateFlow<IndexingState> = _indexingState.asStateFlow()
+    private val app = appContext.applicationContext as App
+    private val vectorIndex = app.vectorIndex
+    private val photoIndexer = app.photoIndexer
+
+    /** Single source of truth for indexing progress across the app. */
+    val indexingState: StateFlow<IndexingState> = photoIndexer.state
 
     private val _searchResults = MutableStateFlow<List<SearchResult>>(emptyList())
-    val searchResults = _searchResults.asStateFlow()
+    val searchResults: StateFlow<List<SearchResult>> = _searchResults.asStateFlow()
 
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
@@ -42,77 +45,52 @@ class SearchViewModel(private val appContext: Context) : ViewModel() {
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
-    private val imageBox = ObjectBox.store.boxFor(ImageEntity::class.java)
-
-    init {
-        viewModelScope.launch {
-            WorkManager.getInstance(appContext)
-                .getWorkInfosForUniqueWorkFlow("image_indexing_task")
-                .collect { infoList ->
-                    val workInfo = infoList.firstOrNull()
-                    _indexingState.value = when (workInfo?.state) {
-                        WorkInfo.State.RUNNING -> {
-                            val current = workInfo.progress.getInt("PROGRESS", 0)
-                            val total = workInfo.progress.getInt("TOTAL", 0)
-                            IndexingState.Indexing(current, total)
-                        }
-                        WorkInfo.State.SUCCEEDED -> IndexingState.Done(0)
-                        else -> IndexingState.Idle
-                    }
-                }
-        }
-    }
-
-    // --- FIXED: Added the missing indexImages function ---
     fun indexImages(uris: List<Uri>) {
-        val uriStrings = uris.map { it.toString() }.toTypedArray()
-        val inputData = workDataOf("KEY_IMAGE_URIS" to uriStrings)
-
-        val request = OneTimeWorkRequestBuilder<IndexingWorker>()
-            .setInputData(inputData)
-            .build()
-
-        WorkManager.getInstance(appContext).enqueueUniqueWork(
-            "image_indexing_task",
-            ExistingWorkPolicy.REPLACE, // REPLACE ensures the new selection starts immediately
-            request
-        )
+        if (uris.isEmpty()) return
+        IndexingScheduler.scheduleIndexUris(appContext, uris.map { it.toString() })
     }
 
     fun onQueryChanged(text: String) {
         _query.value = text
-        if (text.isBlank()) _searchResults.value = emptyList()
+        if (text.isBlank()) {
+            _searchResults.value = emptyList()
+        }
     }
 
-    fun search(query: String) {
+    /**
+     * Executes semantic photo search.
+     *
+     * Uses [InferenceArbiter] to run the text embedder at high priority, cooperatively
+     * preempting background photo embedding without canceling WorkManager jobs.
+     * Uses HNSW vector search via [VectorIndex.queryTopK] (default 500 candidates).
+     */
+    fun search(query: String, useExactScan: Boolean = false, topK: Int = 500) {
         if (query.isBlank()) return
         viewModelScope.launch(Dispatchers.Default) {
-            WorkManager.getInstance(appContext).cancelUniqueWork("image_indexing_task")
             _isSearching.value = true
             try {
-                val queryEmbedding = EmbeddingModelFactory.createTextEmbedder(appContext).use { textEmbedder ->
-                    textEmbedder.getEmbedding(query)
+                // High-priority text embedding: yields background indexing in-process
+                val queryEmbedding = InferenceArbiter.DEFAULT.runHighPriority {
+                    EmbeddingModelFactory.createTextEmbedder(appContext).use { textEmbedder ->
+                        textEmbedder.getEmbedding(query)
+                    }
                 }
 
-                val allImages = imageBox.all
-                val scored = allImages.map { entity ->
-                    val score = cosineSimilarity(queryEmbedding, entity.embedding)
-                    SearchResult(uri = entity.uri, score = score)
-                }.sortedByDescending { it.score }
+                val scoredResults = if (useExactScan) {
+                    vectorIndex.queryAll(queryEmbedding)
+                } else {
+                    vectorIndex.queryTopK(queryEmbedding, topK = topK)
+                }
 
-                _searchResults.value = scored
+                _searchResults.value = scoredResults.map {
+                    SearchResult(uri = it.uri, score = it.score)
+                }
             } catch (e: Exception) {
-                Log.e("SearchViewModel", "Search Error", e)
+                Log.e("SearchViewModel", "Search error for query: $query", e)
             } finally {
                 _isSearching.value = false
             }
         }
-    }
-
-    private fun cosineSimilarity(a: FloatArray, b: FloatArray): Float {
-        var dot = 0.0f
-        for (i in a.indices) dot += a[i] * b[i]
-        return dot
     }
 
     class Factory(private val context: Context) : ViewModelProvider.Factory {

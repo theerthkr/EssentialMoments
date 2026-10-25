@@ -77,26 +77,6 @@ class SearchActivity : ComponentActivity() {
             }
         }
     }
-
-    override fun onStop() {
-        super.onStop()
-        // RESUME indexing worker when the user leaves the search screen[cite: 16]
-        resumeIndexing()
-    }
-
-    private fun resumeIndexing() {
-        val inputData = androidx.work.workDataOf("KEY_INDEX_ALL" to true)
-        val indexingRequest = androidx.work.OneTimeWorkRequestBuilder<IndexingWorker>()
-            .setInputData(inputData)
-            .build()
-
-        WorkManager.getInstance(this).enqueueUniqueWork(
-            "image_indexing_task",
-            androidx.work.ExistingWorkPolicy.KEEP, // Keep existing work instead of resetting[cite: 16]
-            indexingRequest
-        )
-        Log.d("SearchActivity", "Resumed Indexing Worker via onStop()[cite: 16]")
-    }
 }
 
 // --- Top-Level Composables (Placed outside class to avoid receiver errors) ---
@@ -156,8 +136,6 @@ fun SearchScreen(onBack: () -> Unit) {
                             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                             keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
                             keyboardActions = KeyboardActions(onSearch = {
-                                // Pause background work before intensive search[cite: 16]
-                                WorkManager.getInstance(context).cancelUniqueWork("image_indexing_task")
                                 focusManager.clearFocus()
                                 vm.search(query)
                             })

@@ -5,139 +5,102 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
-import com.theerthkr.essentialmoments.ml.EmbeddingModelFactory
+import androidx.work.workDataOf
+import com.theerthkr.essentialmoments.indexing.IndexingScheduler
+import com.theerthkr.essentialmoments.indexing.IndexingState
+import kotlinx.coroutines.launch
 
-
+/**
+ * Thin Android WorkManager adapter for background photo indexing.
+ *
+ * All indexing logic lives inside [PhotoIndexer] (the deep module).
+ * This adapter's only responsibilities are:
+ * 1. Promoting to a foreground service with notification
+ * 2. Delegating to [PhotoIndexer.indexAll] or [PhotoIndexer.indexUris]
+ * 3. Observing [PhotoIndexer.state] to update notification progress and [setProgress]
+ */
 class IndexingWorker(appContext: Context, workerParams: WorkerParameters) :
     CoroutineWorker(appContext, workerParams) {
 
-    private val TAG = "EssentialMoments_Indexing"
-
+    private val TAG = "IndexingWorker"
     private val notificationId = 101
     private val channelId = "indexing_channel"
 
     override suspend fun doWork(): Result {
-
         setForeground(createForegroundInfo())
+        Log.d(TAG, "Worker promoted to Foreground Service.")
 
-        Log.d("EssentialMoments_Indexing", "Worker promoted to Foreground Service.")
-        Log.d(TAG, "Worker started: Preparing to process images.")
+        val app = applicationContext as App
+        val indexer = app.photoIndexer
 
-        val indexAll = inputData.getBoolean("KEY_INDEX_ALL", false)
-        val providedUris = inputData.getStringArray("KEY_IMAGE_URIS")?.toList() ?: emptyList()
+        val indexAll = inputData.getBoolean(IndexingScheduler.KEY_INDEX_ALL, false)
+        val providedUris = inputData.getStringArray(IndexingScheduler.KEY_IMAGE_URIS)?.toList()
+            ?: emptyList()
 
-        // Determine the final list of images to process
-        val finalUriStrings = if (indexAll) {
-            Log.d(TAG, "Indexing mode: ALL IMAGES on device.")
-            fetchAllImagesFromMediaStore() // We will write this helper below
-        } else {
-            Log.d(TAG, "Indexing mode: SELECTED IMAGES only (${providedUris.size}).")
-            providedUris
-        }
-
-
-        val imageBox = ObjectBox.store.boxFor(ImageEntity::class.java) //
-
-        Log.d(TAG, "Loading AI Model...")
-        val embedder = try {
-            EmbeddingModelFactory.createImageEmbedder(applicationContext)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize ImageEmbedder: ${e.message}")
-            return Result.failure()
-        }
-
-        try {
-            embedder.use { imageEmbedder ->
-                for ((index, uriString) in finalUriStrings.withIndex()) {
-                    // IMPORTANT: Check if the user paused the worker (e.g., started the Text Model)
-                    if (isStopped) {
-                        Log.w(TAG, "Worker stopped signal received. Pausing at image $index.")
-                        return Result.retry()
+        return kotlinx.coroutines.coroutineScope {
+            val observerJob = launch {
+                indexer.state.collect { state ->
+                    when (state) {
+                        is IndexingState.Indexing -> {
+                            setProgress(
+                                workDataOf(
+                                    "PROGRESS" to state.current,
+                                    "TOTAL" to state.total
+                                )
+                            )
+                            updateNotification(state.current, state.total)
+                        }
+                        else -> { /* Idle, Done, Error — handled by return value */ }
                     }
-
-                    Log.d(TAG, "Checking if image is already indexed: $uriString")
-
-
-                    val query = imageBox.query(ImageEntity_.uri.equal(uriString)).build()
-
-                    // 2. Try to find the first match[cite: 4]
-                    val existingImage = query.findFirst()
-
-                    // 3. Close the query to save memory (Important in a loop!)[cite: 4]
-                    query.close()
-
-                    if (existingImage != null) {
-                        Log.d(TAG, "Skipping: Image already exists in ObjectBox.")
-                        continue // Skip to the next image in the loop
-                    }
-
-                    Log.d(TAG, "Processing image ${index + 1}/${finalUriStrings.size}: $uriString")
-
-                    // 2. Compute L2-normalized image embedding via ImageEmbedder
-                    val finalEmbedding = imageEmbedder.getEmbedding(Uri.parse(uriString)) ?: continue
-                    val preview = finalEmbedding.take(5).joinToString(", ")
-                    Log.d(TAG, "Embedding Generated! Size: ${finalEmbedding.size} | Preview: [$preview...]")
-
-                    // 4. Save to ObjectBox[cite: 4]
-                    imageBox.put(ImageEntity(uri = uriString, embedding = finalEmbedding))
-                    Log.i(TAG, "Successfully indexed image ${index + 1}: $uriString")
-                    updateNotification(index + 1, finalUriStrings.size)
                 }
             }
 
-            Log.d(TAG, "Indexing complete! Processed all ${finalUriStrings.size} images.")
-            return Result.success()
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Critical error during indexing: ${e.message}")
-            return Result.retry()
-        }
-
-    }
-    private fun fetchAllImagesFromMediaStore(): List<String> {
-        val uriList = mutableListOf<String>()
-        val projection = arrayOf(android.provider.MediaStore.Images.Media._ID)
-        val query = applicationContext.contentResolver.query(
-            android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            projection, null, null, null
-        )
-
-        query?.use { cursor ->
-            val idColumn = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Images.Media._ID)
-            while (cursor.moveToNext()) {
-                val id = cursor.getLong(idColumn)
-                val contentUri = android.content.ContentUris.withAppendedId(
-                    android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id
-                )
-                uriList.add(contentUri.toString())
+            try {
+                if (indexAll) {
+                    indexer.indexAll()
+                } else {
+                    indexer.indexUris(providedUris)
+                }
+                observerJob.cancel()
+                Log.d(TAG, "Indexing complete.")
+                Result.success()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                observerJob.cancel()
+                Log.w(TAG, "Worker cancelled.")
+                Result.success() // Don't retry on explicit cancellation
+            } catch (e: Exception) {
+                observerJob.cancel()
+                Log.e(TAG, "Worker error: ${e.message}", e)
+                Result.retry()
             }
         }
-        return uriList
     }
+
     private fun createForegroundInfo(): ForegroundInfo {
-        val intent = Intent(applicationContext, StopIndexingReceiver::class.java)
+        val stopIntent = Intent(applicationContext, StopIndexingReceiver::class.java)
         val pendingIntent = PendingIntent.getBroadcast(
-            applicationContext, 0, intent, PendingIntent.FLAG_IMMUTABLE
+            applicationContext, 0, stopIntent, PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Create Channel for Android O+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel =
-                NotificationChannel(channelId, "Image Indexing", NotificationManager.IMPORTANCE_LOW)
-            val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val channel = NotificationChannel(
+                channelId, "Image Indexing", NotificationManager.IMPORTANCE_LOW
+            )
+            val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE)
+                as NotificationManager
             manager.createNotificationChannel(channel)
         }
 
         val notification = NotificationCompat.Builder(applicationContext, channelId)
             .setContentTitle("Indexing in progress")
-            .setSmallIcon(R.drawable.ic_launcher_foreground) // Your app logo
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setOngoing(true)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", pendingIntent)
             .build()
@@ -145,31 +108,27 @@ class IndexingWorker(appContext: Context, workerParams: WorkerParameters) :
         return ForegroundInfo(
             notificationId,
             notification,
-            // THIS IS THE FIX: Explicitly passing the service type
-            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        )
     }
 
     private fun updateNotification(current: Int, total: Int) {
-        val notification = androidx.core.app.NotificationCompat.Builder(applicationContext, channelId)
+        val stopIntent = Intent(applicationContext, StopIndexingReceiver::class.java)
+        val pendingIntent = PendingIntent.getBroadcast(
+            applicationContext, 0, stopIntent, PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(applicationContext, channelId)
             .setContentTitle("Indexing in progress")
             .setContentText("Processing image $current of $total")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setOngoing(true)
-            // Keep the Stop button visible during updates
-            .addAction(
-                android.R.drawable.ic_menu_close_clear_cancel,
-                "Stop",
-                android.app.PendingIntent.getBroadcast(
-                    applicationContext, 0,
-                    android.content.Intent(applicationContext, StopIndexingReceiver::class.java),
-                    android.app.PendingIntent.FLAG_IMMUTABLE
-                )
-            )
-            .setProgress(total, current, false) // Shows a progress bar
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", pendingIntent)
+            .setProgress(total, current, false)
             .build()
 
-        val manager = applicationContext.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE)
+            as NotificationManager
         manager.notify(notificationId, notification)
     }
 }

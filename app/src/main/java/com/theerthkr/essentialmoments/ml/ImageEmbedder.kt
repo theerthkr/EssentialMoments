@@ -21,6 +21,16 @@ interface ImageEmbedder : AutoCloseable {
     fun getEmbedding(uri: Uri): FloatArray?
 
     /**
+     * Convenience method decoding [uriString] into an embedding.
+     */
+    fun getEmbedding(uriString: String): FloatArray? =
+        try {
+            getEmbedding(Uri.parse(uriString))
+        } catch (_: Exception) {
+            null
+        }
+
+    /**
      * Computes an L2-normalized embedding from [bitmap].
      */
     fun getEmbedding(bitmap: Bitmap, onResized: ((Bitmap) -> Unit)? = null): FloatArray

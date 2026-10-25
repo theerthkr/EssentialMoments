@@ -24,14 +24,16 @@
         {
           "id": "3:2166173896843414453",
           "name": "embedding",
-          "type": 28
+          "indexId": "2:6921494465746037850",
+          "type": 28,
+          "flags": 8
         }
       ],
       "relations": []
     }
   ],
   "lastEntityId": "1:7932186314567831546",
-  "lastIndexId": "1:5745486734470948863",
+  "lastIndexId": "2:6921494465746037850",
   "lastRelationId": "0:0",
   "lastSequenceId": "0:0",
   "modelVersion": 5,

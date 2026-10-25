@@ -84,6 +84,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
+import com.theerthkr.essentialmoments.indexing.IndexingScheduler
 import com.theerthkr.essentialmoments.ui.theme.EssentialMomentsTheme
 import kotlin.jvm.java
 
@@ -136,6 +137,7 @@ class MainActivity : ComponentActivity() {
             if (isGranted) {
                 viewModel.fetchAlbums()
                 viewModel.fetchAllImages()
+                IndexingScheduler.scheduleIndexAll(context)
             }
         }
 
@@ -144,6 +146,7 @@ class MainActivity : ComponentActivity() {
             if (hasPermission) {
                 viewModel.fetchAlbums()
                 viewModel.fetchAllImages()
+                IndexingScheduler.scheduleIndexAll(context)
             } else {
                 permissionLauncher.launch(permissions)
             }
