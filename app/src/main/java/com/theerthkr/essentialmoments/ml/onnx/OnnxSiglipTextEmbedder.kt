@@ -63,7 +63,7 @@ class OnnxSiglipTextEmbedder(context: Context) : TextEmbedder {
         private const val TAG = "OnnxSiglipTextEmbedder"
         const val MODEL_ID = "siglip2_base_patch16_224_onnx_int8"
         const val EMBEDDING_DIM = 768
-        const val MODEL_FILE = "text_model_int8.onnx"
+        const val MODEL_FILE = "onnx_int8/text_model_int8.onnx"
         internal const val INPUT_NAME = "input_ids"
         internal const val OUTPUT_NAME = "pooler_output"
         private val REQUESTED_OUTPUTS = setOf(OUTPUT_NAME)

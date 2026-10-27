@@ -33,7 +33,7 @@ class SigLIPTokenizer(private val context: Context? = null) {
         const val EOS_TOKEN_ID = 1
         const val BOS_TOKEN_ID = 2
         const val UNK_TOKEN_ID = 3
-        const val VOCAB_FILE = "siglip2_vocab.bin"
+        const val VOCAB_FILE = "onnx_int8/siglip2_vocab.bin"
         private const val EXPECTED_VOCAB_SIZE = 256_000
 
         private val BYTE_TOKENS = Array(256) { "<0x%02X>".format(it) }

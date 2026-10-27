@@ -16,7 +16,7 @@ class LiteRtSiglipTextEmbedder(context: Context) : TextEmbedder {
         private const val TAG = "LiteRtSiglipTextEmbedder"
         const val MODEL_ID = "siglip2_base_patch16_224_litert"
         const val EMBEDDING_DIM = 768
-        private const val MODEL_FILE = "siglip2_text.tflite"
+        private const val MODEL_FILE = "litert/siglip2_text.tflite"
     }
 
     private val tokenizer = SigLIPTokenizer(context.applicationContext)

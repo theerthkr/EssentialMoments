@@ -71,7 +71,7 @@ class OnnxSiglipImageEmbedder(context: Context) : ImageEmbedder {
         private const val TAG = "OnnxSiglipImageEmbedder"
         const val MODEL_ID = "siglip2_base_patch16_224_onnx_int8"
         const val EMBEDDING_DIM = 768
-        const val MODEL_FILE = "vision_model_int8.onnx"
+        const val MODEL_FILE = "onnx_int8/vision_model_int8.onnx"
         internal const val INPUT_NAME = "pixel_values"
         internal const val OUTPUT_NAME = "pooler_output"
         private val REQUESTED_OUTPUTS = setOf(OUTPUT_NAME)

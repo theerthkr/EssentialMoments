@@ -71,7 +71,7 @@ class LiteRtSiglipImageEmbedder(context: Context) : ImageEmbedder {
         private const val TAG = "LiteRtSiglipImageEmbedder"
         const val MODEL_ID = "siglip2_base_patch16_224_litert"
         const val EMBEDDING_DIM = 768
-        private const val MODEL_FILE = "siglip2_base_patch16-224.tflite"
+        private const val MODEL_FILE = "litert/siglip2_base_patch16-224.tflite"
         internal const val TARGET_WIDTH = SiglipImagePreprocessor.TARGET_WIDTH
         internal const val TARGET_HEIGHT = SiglipImagePreprocessor.TARGET_HEIGHT
 
