@@ -70,13 +70,16 @@ class SearchViewModel(private val appContext: Context) : ViewModel() {
             _isSearching.value = true
             try {
                 // High-priority text embedding: yields background indexing in-process
-                val queryEmbedding = InferenceArbiter.DEFAULT.runHighPriority {
+                val (textModelId, queryEmbedding) = InferenceArbiter.DEFAULT.runHighPriority {
                     EmbeddingModelFactory.createTextEmbedder(appContext).use { textEmbedder ->
-                        textEmbedder.getEmbedding(query)
+                        textEmbedder.modelId to textEmbedder.getEmbedding(query)
                     }
                 }
 
-                val scoredResults = vectorIndex.queryAll(queryEmbedding)
+                // Only compare against image embeddings produced by the same modelId,
+                // so a text query from model A is never scored against image embeddings
+                // from model B.
+                val scoredResults = vectorIndex.queryAll(queryEmbedding, textModelId)
 
                 _searchResults.value = scoredResults.map {
                     SearchResult(uri = it.uri, score = it.score)

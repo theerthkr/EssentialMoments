@@ -106,21 +106,26 @@ class PhotoIndexer(
 
     /**
      * Shared pipeline: filter → embed → persist in batches → emit progress.
+     *
+     * All embeddings are tagged with [embedder.modelId] so a photo embedded by
+     * model A is never compared against an embedding from model B.
      */
     private suspend fun indexUrisInternal(uris: List<String>) {
-        // Batch-filter already indexed URIs (single set-lookup, not N+1)
-        val unindexed = withContext(Dispatchers.IO) {
-            vectorIndex.filterUnindexed(uris)
-        }
-        val total = unindexed.size
-        if (total == 0) {
-            _state.value = IndexingState.Done(0)
-            return
-        }
-        _state.value = IndexingState.Indexing(0, total)
-        logD("Starting indexing: $total unindexed photos")
-
         imageEmbedderFactory().use { embedder ->
+            val modelId = embedder.modelId
+
+            // Batch-filter already indexed URIs (single set-lookup, not N+1) for this modelId
+            val unindexed = withContext(Dispatchers.IO) {
+                vectorIndex.filterUnindexed(uris, modelId)
+            }
+            val total = unindexed.size
+            if (total == 0) {
+                _state.value = IndexingState.Done(0)
+                return
+            }
+            _state.value = IndexingState.Indexing(0, total)
+            logD("Starting indexing: $total unindexed photos (modelId=$modelId)")
+
             val batch = mutableListOf<VectorIndex.IndexEntry>()
             var processed = 0
 
@@ -136,7 +141,7 @@ class PhotoIndexer(
                 }
 
                 if (embedding != null) {
-                    batch.add(VectorIndex.IndexEntry(uriString, embedding))
+                    batch.add(VectorIndex.IndexEntry(uriString, embedding, modelId))
                 }
 
                 // Flush batch to ObjectBox
@@ -153,9 +158,9 @@ class PhotoIndexer(
             if (batch.isNotEmpty()) {
                 withContext(Dispatchers.IO) { vectorIndex.putBatch(batch.toList()) }
             }
-        }
 
-        logD("Indexing complete: $total photos processed")
-        _state.value = IndexingState.Done(total)
+            logD("Indexing complete: $total photos processed (modelId=$modelId)")
+            _state.value = IndexingState.Done(total)
+        }
     }
 }

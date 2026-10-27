@@ -8,28 +8,37 @@ import kotlin.math.sqrt
  *
  * Provides fast, deterministic vector storage and scoring on the JVM without
  * native ObjectBox JNI dependencies. Ideal for unit tests and local simulation.
+ *
+ * Storage is nested by modelId then URI, so embeddings from different models
+ * never collide and are never compared against each other.
  */
 class InMemoryVectorIndex : VectorIndex {
 
-    private val storage = ConcurrentHashMap<String, FloatArray>()
+    private val storage = ConcurrentHashMap<String, ConcurrentHashMap<String, FloatArray>>()
 
-    override fun filterUnindexed(uris: List<String>): List<String> =
-        uris.filter { !storage.containsKey(it) }
+    override fun filterUnindexed(uris: List<String>, modelId: String): List<String> {
+        val byModel = storage[modelId]
+        val existingUris = if (byModel == null) emptySet<String>() else byModel.keys.toHashSet()
+        return uris.filter { it !in existingUris }
+    }
 
     override fun putBatch(entries: List<VectorIndex.IndexEntry>) {
+        if (entries.isEmpty()) return
         for (entry in entries) {
-            storage[entry.uri] = entry.embedding
+            storage.computeIfAbsent(entry.modelId) { ConcurrentHashMap() }[entry.uri] = entry.embedding
         }
     }
 
-    override fun queryAll(embedding: FloatArray): List<VectorIndex.ScoredResult> =
-        storage.mapNotNull { (uri, emb) ->
-            if (emb.isEmpty()) return@mapNotNull null
+    override fun queryAll(embedding: FloatArray, modelId: String): List<VectorIndex.ScoredResult> {
+        val byModel = storage[modelId] ?: return emptyList()
+        return byModel.mapNotNull { (uri, emb) ->
+            if (emb.isEmpty() || emb.size != embedding.size) return@mapNotNull null
             VectorIndex.ScoredResult(uri = uri, score = dotProduct(embedding, emb))
         }.sortedByDescending { it.score }
+    }
 
     override val indexedCount: Int
-        get() = storage.size
+        get() = storage.values.sumOf { it.size }
 
     fun clear() {
         storage.clear()
