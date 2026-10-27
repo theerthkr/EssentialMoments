@@ -256,7 +256,16 @@ class MainActivity : ComponentActivity() {
 
                     if (hasPermission) {
                         if (selectedTab == "Photos") {
-                            PhotoGrid(photos = allPhotos)
+                            PhotoGrid(
+                                photos = allPhotos,
+                                onPhotoClick = { photo ->
+                                    val intent = Intent(context, ImageViewActivity::class.java).apply {
+                                        putExtra("IMAGE_URI", photo.uri)
+                                        putExtra("IMAGE_NAME", photo.uri.substringAfterLast("/"))
+                                    }
+                                    context.startActivity(intent)
+                                }
+                            )
                         } else {
                             AlbumGrid(albums = albums) { album ->
                                 val intent = Intent(context, AlbumDetailActivity::class.java).apply {

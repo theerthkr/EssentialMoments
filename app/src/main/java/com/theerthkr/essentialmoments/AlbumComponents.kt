@@ -26,7 +26,10 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 
 @Composable
-fun PhotoGrid(photos: List<MediaImage>) {
+fun PhotoGrid(
+    photos: List<MediaImage>,
+    onPhotoClick: (MediaImage) -> Unit
+) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(4), // 4 columns for photos
         contentPadding = PaddingValues(1.dp),
@@ -38,7 +41,8 @@ fun PhotoGrid(photos: List<MediaImage>) {
                 contentDescription = null,
                 modifier = Modifier
                     .aspectRatio(1f)
-                    .padding(1.dp),
+                    .padding(1.dp)
+                    .clickable { onPhotoClick(photo) },
                 contentScale = ContentScale.Crop
             )
         }
