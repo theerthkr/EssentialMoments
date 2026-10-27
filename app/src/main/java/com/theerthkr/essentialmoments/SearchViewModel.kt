@@ -24,7 +24,7 @@ data class SearchResult(val uri: String, val score: Float)
  * Interacts only with deep module interfaces:
  * - [PhotoIndexer.state] as single source of truth for indexing progress
  * - [IndexingScheduler] for triggering background index work
- * - [VectorIndex] for HNSW approximate nearest-neighbor search (top-500) and exact scan
+ * - [VectorIndex] for exact cosine similarity vector search over generated embeddings
  * - [InferenceArbiter] for prioritizing interactive text queries over background jobs
  */
 class SearchViewModel(private val appContext: Context) : ViewModel() {
@@ -62,9 +62,9 @@ class SearchViewModel(private val appContext: Context) : ViewModel() {
      *
      * Uses [InferenceArbiter] to run the text embedder at high priority, cooperatively
      * preempting background photo embedding without canceling WorkManager jobs.
-     * Uses HNSW vector search via [VectorIndex.queryTopK] (default 500 candidates).
+     * Uses exact cosine similarity vector scan via [VectorIndex.queryAll].
      */
-    fun search(query: String, useExactScan: Boolean = false, topK: Int = 500) {
+    fun search(query: String) {
         if (query.isBlank()) return
         viewModelScope.launch(Dispatchers.Default) {
             _isSearching.value = true
@@ -76,11 +76,7 @@ class SearchViewModel(private val appContext: Context) : ViewModel() {
                     }
                 }
 
-                val scoredResults = if (useExactScan) {
-                    vectorIndex.queryAll(queryEmbedding)
-                } else {
-                    vectorIndex.queryTopK(queryEmbedding, topK = topK)
-                }
+                val scoredResults = vectorIndex.queryAll(queryEmbedding)
 
                 _searchResults.value = scoredResults.map {
                     SearchResult(uri = it.uri, score = it.score)

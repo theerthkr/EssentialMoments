@@ -20,7 +20,7 @@ class InMemoryVectorIndexTest {
     }
 
     @Test
-    fun testQueryTopKAndRanking() {
+    fun testQueryAndRanking() {
         val index = InMemoryVectorIndex()
         index.putBatch(listOf(
             VectorIndex.IndexEntry("target", floatArrayOf(1.0f, 0.0f)),
@@ -29,12 +29,12 @@ class InMemoryVectorIndexTest {
         ))
 
         val query = floatArrayOf(1.0f, 0.0f)
-        val top2 = index.queryTopK(query, topK = 2)
+        val results = index.queryAll(query)
 
-        assertEquals(2, top2.size)
-        assertEquals("target", top2[0].uri)
-        assertTrue(top2[0].score > top2[1].score)
-        assertEquals("semi", top2[1].uri)
+        assertEquals(3, results.size)
+        assertEquals("target", results[0].uri)
+        assertTrue(results[0].score > results[1].score)
+        assertEquals("semi", results[1].uri)
     }
 
     @Test

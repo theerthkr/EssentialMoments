@@ -1,7 +1,7 @@
 package com.theerthkr.essentialmoments
 
 
-import com.theerthkr.essentialmoments.data.ObjectBoxVectorIndex
+import com.theerthkr.essentialmoments.data.InMemoryVectorIndex
 import com.theerthkr.essentialmoments.data.VectorIndex
 import com.theerthkr.essentialmoments.indexing.PhotoIndexer
 import com.theerthkr.essentialmoments.media.AndroidMediaCatalog
@@ -44,7 +44,7 @@ class App : android.app.Application() {
         ObjectBox.init(this)
 
         mediaCatalog = AndroidMediaCatalog(contentResolver)
-        vectorIndex = ObjectBoxVectorIndex(ObjectBox.store)
+        vectorIndex = InMemoryVectorIndex()
         photoIndexer = PhotoIndexer(
             mediaCatalog = mediaCatalog,
             vectorIndex = vectorIndex,

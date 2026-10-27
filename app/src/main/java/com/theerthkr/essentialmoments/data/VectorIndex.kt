@@ -3,7 +3,7 @@ package com.theerthkr.essentialmoments.data
 /**
  * Deep module interface for vector storage, deduplication, and similarity search.
  *
- * Hides the storage engine (ObjectBox), HNSW indexing, deduplication logic,
+ * Hides the storage engine (ObjectBox), deduplication logic,
  * and ranking math behind a small interface. Callers never see ImageEntity,
  * BoxStore, or raw database cursors.
  */
@@ -25,18 +25,8 @@ interface VectorIndex {
     fun putBatch(entries: List<IndexEntry>)
 
     /**
-     * Returns the top [topK] closest photos to [embedding], ranked by
-     * cosine similarity (highest first), using HNSW approximate nearest neighbor search.
-     *
-     * Default topK = 500. Pass a higher value for broader results.
-     */
-    fun queryTopK(embedding: FloatArray, topK: Int = 500): List<ScoredResult>
-
-    /**
      * Exact scan: loads all indexed embeddings and ranks them against [embedding]
-     * by exact dot-product similarity (highest first).
-     *
-     * Useful for features requiring 100% exact ranking over the full index.
+     * by exact dot-product cosine similarity (highest first).
      */
     fun queryAll(embedding: FloatArray): List<ScoredResult>
 

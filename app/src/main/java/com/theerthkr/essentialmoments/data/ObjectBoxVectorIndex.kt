@@ -5,11 +5,9 @@ import com.theerthkr.essentialmoments.ImageEntity_
 import io.objectbox.BoxStore
 
 /**
- * Production adapter for [VectorIndex] backed by ObjectBox with @HnswIndex (COSINE).
+ * Production adapter for [VectorIndex] backed by ObjectBox.
  *
- * - [queryTopK] uses ObjectBox's native C++ HNSW graph for sub-millisecond
- *   approximate nearest-neighbor search with near-zero Kotlin heap usage.
- * - [queryAll] provides exact dot-product ranking over the full index.
+ * - [queryAll] provides exact dot-product cosine similarity ranking over the full index.
  * - [filterUnindexed] loads only URI strings (no embeddings) for batch deduplication.
  */
 class ObjectBoxVectorIndex(store: BoxStore) : VectorIndex {
@@ -38,31 +36,14 @@ class ObjectBoxVectorIndex(store: BoxStore) : VectorIndex {
         box.put(entities)
     }
 
-    override fun queryTopK(embedding: FloatArray, topK: Int): List<VectorIndex.ScoredResult> {
-        val query = box.query(
-            ImageEntity_.embedding.nearestNeighbors(embedding, topK)
-        ).build()
-
-        return try {
-            query.findWithScores().map { scored ->
-                VectorIndex.ScoredResult(
-                    uri = scored.get().uri,
-                    // ObjectBox COSINE distance = 1 - cosine_similarity
-                    // Convert back: similarity = 1.0 - distance
-                    score = (1.0 - scored.score).toFloat()
-                )
-            }
-        } finally {
-            query.close()
-        }
-    }
-
     override fun queryAll(embedding: FloatArray): List<VectorIndex.ScoredResult> {
         val allEntities = box.all
-        return allEntities.map { entity ->
-            var dot = 0.0f
+        return allEntities.mapNotNull { entity ->
             val emb = entity.embedding
-            for (i in embedding.indices) {
+            if (emb.isEmpty()) return@mapNotNull null
+            var dot = 0.0f
+            val len = minOf(embedding.size, emb.size)
+            for (i in 0 until len) {
                 dot += embedding[i] * emb[i]
             }
             VectorIndex.ScoredResult(uri = entity.uri, score = dot)

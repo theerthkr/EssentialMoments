@@ -22,11 +22,9 @@ class InMemoryVectorIndex : VectorIndex {
         }
     }
 
-    override fun queryTopK(embedding: FloatArray, topK: Int): List<VectorIndex.ScoredResult> =
-        queryAll(embedding).take(topK)
-
     override fun queryAll(embedding: FloatArray): List<VectorIndex.ScoredResult> =
-        storage.map { (uri, emb) ->
+        storage.mapNotNull { (uri, emb) ->
+            if (emb.isEmpty()) return@mapNotNull null
             VectorIndex.ScoredResult(uri = uri, score = dotProduct(embedding, emb))
         }.sortedByDescending { it.score }
 
