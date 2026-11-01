@@ -4,7 +4,7 @@ package com.theerthkr.essentialmoments.ml
  * Backend-agnostic contract for computing normalized text query embeddings.
  *
  * Implementations encapsulate model-specific tokenization, padding,
- * hardware runtime execution (e.g. LiteRT, ONNX Runtime), and L2 normalization.
+ * hardware runtime execution (ONNX Runtime), and L2 normalization.
  */
 interface TextEmbedder : AutoCloseable {
     val modelId: String

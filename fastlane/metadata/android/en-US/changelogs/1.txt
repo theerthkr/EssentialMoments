@@ -1,0 +1,4 @@
+Initial release:
+- On-device natural language photo search using SigLIP 2.
+- Background photo indexing backed by AndroidX Room database.
+- Integrated model downloader with pause, resume, and integrity verification.

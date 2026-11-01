@@ -11,5 +11,6 @@ data class MediaImage(
     val id: Long,
     val uri: String,
     val albumId: String,
+    /** Capture/added time in epoch milliseconds. */
     val dateTaken: Long
 )

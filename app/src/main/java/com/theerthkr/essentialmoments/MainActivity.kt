@@ -1,38 +1,28 @@
 package com.theerthkr.essentialmoments
 
 import android.Manifest
-import android.app.Activity
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.RequiresApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -42,10 +32,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.FloatingActionButton
@@ -59,7 +45,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -69,32 +54,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
+import com.theerthkr.essentialmoments.indexing.IndexingScheduler
+import com.theerthkr.essentialmoments.ui.model.ModelSetupBanner
 import com.theerthkr.essentialmoments.ui.theme.EssentialMomentsTheme
-import kotlin.jvm.java
-
-// ... imports (Ensure you have android.content.Intent and androidx.compose.runtime.*)
 
 class MainActivity : ComponentActivity() {
 
-    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge() // Good practice for modern apps
+        enableEdgeToEdge()
         setContent {
             EssentialMomentsTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -104,7 +79,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     @Composable
     fun MainGalleryScreen() {
         val context = LocalContext.current
@@ -136,6 +110,7 @@ class MainActivity : ComponentActivity() {
             if (isGranted) {
                 viewModel.fetchAlbums()
                 viewModel.fetchAllImages()
+                IndexingScheduler.scheduleIndexAll(context)
             }
         }
 
@@ -144,6 +119,7 @@ class MainActivity : ComponentActivity() {
             if (hasPermission) {
                 viewModel.fetchAlbums()
                 viewModel.fetchAllImages()
+                IndexingScheduler.scheduleIndexAll(context)
             } else {
                 permissionLauncher.launch(permissions)
             }
@@ -239,10 +215,10 @@ class MainActivity : ComponentActivity() {
                                     onDismissRequest = { showMenu = false }
                                 ) {
                                     DropdownMenuItem(
-                                        text = { Text("Run Model") },
+                                        text = { Text("Settings") },
                                         onClick = {
                                             showMenu = false
-                                            val intent = Intent(context, ModelActivity::class.java)
+                                            val intent = Intent(context, SettingsActivity::class.java)
                                             context.startActivity(intent)
                                         }
                                     )
@@ -252,8 +228,24 @@ class MainActivity : ComponentActivity() {
                     }
 
                     if (hasPermission) {
+                        ModelSetupBanner(
+                            onClick = {
+                                context.startActivity(
+                                    Intent(context, ModelDownloadActivity::class.java)
+                                )
+                            }
+                        )
                         if (selectedTab == "Photos") {
-                            PhotoGrid(photos = allPhotos)
+                            PhotoGrid(
+                                photos = allPhotos,
+                                onPhotoClick = { photo ->
+                                    val intent = Intent(context, ImageViewActivity::class.java).apply {
+                                        putExtra("IMAGE_URI", photo.uri)
+                                        putExtra("IMAGE_NAME", photo.uri.substringAfterLast("/"))
+                                    }
+                                    context.startActivity(intent)
+                                }
+                            )
                         } else {
                             AlbumGrid(albums = albums) { album ->
                                 val intent = Intent(context, AlbumDetailActivity::class.java).apply {
@@ -332,6 +324,3 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
-
-// com/theerthkr/essential_moments/RunModelActivity.kt
-// com/theerthkr/essential_moments/MainActivity.kt

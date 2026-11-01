@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
 import androidx.exifinterface.media.ExifInterface
-import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -38,6 +37,7 @@ fun getImageInfo(context: Context, uriString: String): ImageInfo {
     if (uri.scheme == "content") {
         val projection = arrayOf(
             MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.Images.Media.DATE_TAKEN,
             MediaStore.MediaColumns.DATE_MODIFIED,
             MediaStore.MediaColumns.SIZE,
             MediaStore.MediaColumns.WIDTH,
@@ -50,8 +50,14 @@ fun getImageInfo(context: Context, uriString: String): ImageInfo {
                 val nameIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
                 if (nameIdx != -1) name = cursor.getString(nameIdx) ?: "Unknown"
 
-                val dateIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
-                if (dateIdx != -1) dateMs = cursor.getLong(dateIdx) * 1000
+                // Prefer the capture time recorded in EXIF; fall back to the file's
+                // modified time for images that have no capture metadata.
+                val takenIdx = cursor.getColumnIndex(MediaStore.Images.Media.DATE_TAKEN)
+                if (takenIdx != -1) dateMs = cursor.getLong(takenIdx)
+                if (dateMs <= 0L) {
+                    val modifiedIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+                    if (modifiedIdx != -1) dateMs = cursor.getLong(modifiedIdx) * 1000L
+                }
 
                 val sizeIdx = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
                 if (sizeIdx != -1) sizeBytes = cursor.getLong(sizeIdx)

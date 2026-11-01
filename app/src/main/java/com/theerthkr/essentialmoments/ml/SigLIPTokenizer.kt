@@ -33,7 +33,6 @@ class SigLIPTokenizer(private val context: Context? = null) {
         const val EOS_TOKEN_ID = 1
         const val BOS_TOKEN_ID = 2
         const val UNK_TOKEN_ID = 3
-        const val VOCAB_FILE = "siglip2_vocab.bin"
         private const val EXPECTED_VOCAB_SIZE = 256_000
 
         private val BYTE_TOKENS = Array(256) { "<0x%02X>".format(it) }
@@ -70,11 +69,19 @@ class SigLIPTokenizer(private val context: Context? = null) {
                     "Context required for initialize(); use initialize(InputStream) in JVM tests"
                 }
                 try {
-                    val loaded = loadVocabFromStream(ctx.assets.open(VOCAB_FILE))
+                    val vocabFile = com.theerthkr.essentialmoments.ml.model.ModelStore(ctx)
+                        .file(com.theerthkr.essentialmoments.ml.model.ModelRole.VOCAB)
+                        ?: throw com.theerthkr.essentialmoments.ml.ModelNotReadyException(
+                            com.theerthkr.essentialmoments.ml.model.ModelRole.VOCAB
+                        )
+                    val loaded = loadVocabFromStream(vocabFile.inputStream())
                     cachedVocab = loaded
                     Log.d(TAG, "Tokenizer ready: ${loaded.size} vocab entries")
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to load $VOCAB_FILE: ${e.message}", e)
+                    throw IllegalStateException(
+                        "Failed to load tokenizer vocab. Download the search model in settings.",
+                        e
+                    )
                 }
             }
             vocab = cachedVocab
