@@ -52,13 +52,13 @@ class PhotoIndexerTest {
         )
 
         indexer.indexAll()
-        assertEquals(3, vectorIndex.indexedCount)
+        assertEquals(3, vectorIndex.indexedCount())
         assertTrue(indexer.state.value is IndexingState.Done)
         assertEquals(3, (indexer.state.value as IndexingState.Done).count)
 
         // Second run with no new photos
         indexer.indexAll()
-        assertEquals(3, vectorIndex.indexedCount)
+        assertEquals(3, vectorIndex.indexedCount())
         assertEquals(0, (indexer.state.value as IndexingState.Done).count)
     }
 
@@ -74,7 +74,10 @@ class PhotoIndexerTest {
         )
 
         indexer.indexUris(listOf("p1", "p2"))
-        assertEquals(2, vectorIndex.indexedCount)
+        assertEquals(2, vectorIndex.indexedCount())
         assertEquals(2, (indexer.state.value as IndexingState.Done).count)
+
+        indexer.resetState()
+        assertTrue(indexer.state.value is IndexingState.Idle)
     }
 }

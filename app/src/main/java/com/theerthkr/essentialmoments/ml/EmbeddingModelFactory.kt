@@ -1,45 +1,41 @@
 package com.theerthkr.essentialmoments.ml
 
 import android.content.Context
-import com.theerthkr.essentialmoments.ml.litert.LiteRtSiglipImageEmbedder
-import com.theerthkr.essentialmoments.ml.litert.LiteRtSiglipTextEmbedder
+import com.theerthkr.essentialmoments.ml.model.ModelRole
+import com.theerthkr.essentialmoments.ml.model.ModelStore
 import com.theerthkr.essentialmoments.ml.onnx.OnnxSiglipImageEmbedder
 import com.theerthkr.essentialmoments.ml.onnx.OnnxSiglipTextEmbedder
 
 /**
  * Single factory entry point for creating [ImageEmbedder] and [TextEmbedder] instances.
  *
- * Callers across the app depend only on the [ImageEmbedder] and [TextEmbedder] interfaces.
- * Defaults to the INT8 quantized ONNX Runtime adapter ([Backend.ONNX_INT8]) while retaining
- * the LiteRT adapter ([Backend.LITERT]) behind the same seam.
+ * Callers across the app depend only on the [ImageEmbedder] and [TextEmbedder] interfaces,
+ * so the concrete ONNX Runtime implementation can be replaced without touching call sites.
  */
 object EmbeddingModelFactory {
 
-    enum class Backend {
-        ONNX_INT8,
-        LITERT
+    fun createImageEmbedder(context: Context): ImageEmbedder {
+        requireModel(context, ModelRole.VISION)
+        return OnnxSiglipImageEmbedder(context)
     }
 
-    @Volatile
-    var activeBackend: Backend = Backend.ONNX_INT8
-
-    fun createImageEmbedder(
-        context: Context,
-        backend: Backend = activeBackend
-    ): ImageEmbedder {
-        return when (backend) {
-            Backend.ONNX_INT8 -> OnnxSiglipImageEmbedder(context)
-            Backend.LITERT -> LiteRtSiglipImageEmbedder(context)
-        }
+    fun createTextEmbedder(context: Context): TextEmbedder {
+        requireModel(context, ModelRole.TEXT)
+        requireModel(context, ModelRole.VOCAB)
+        return OnnxSiglipTextEmbedder(context)
     }
 
-    fun createTextEmbedder(
-        context: Context,
-        backend: Backend = activeBackend
-    ): TextEmbedder {
-        return when (backend) {
-            Backend.ONNX_INT8 -> OnnxSiglipTextEmbedder(context)
-            Backend.LITERT -> LiteRtSiglipTextEmbedder(context)
+    fun isVisionReady(context: Context): Boolean =
+        ModelStore(context.applicationContext).isReady(ModelRole.VISION)
+
+    fun isTextReady(context: Context): Boolean {
+        val store = ModelStore(context.applicationContext)
+        return store.isReady(ModelRole.TEXT) && store.isReady(ModelRole.VOCAB)
+    }
+
+    private fun requireModel(context: Context, role: ModelRole) {
+        if (!ModelStore(context.applicationContext).isReady(role)) {
+            throw ModelNotReadyException(role)
         }
     }
 }

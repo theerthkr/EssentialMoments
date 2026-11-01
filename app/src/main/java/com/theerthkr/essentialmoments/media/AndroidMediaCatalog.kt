@@ -70,49 +70,53 @@ class AndroidMediaCatalog(private val contentResolver: ContentResolver) : MediaC
         return albumsMap.values.toList()
     }
 
-    override fun albumPhotos(albumId: String): List<MediaImage> {
-        val images = mutableListOf<MediaImage>()
-        val projection = arrayOf(
-            MediaStore.Images.Media._ID,
-            MediaStore.Images.Media.DATE_TAKEN
+    override fun albumPhotos(albumId: String): List<MediaImage> =
+        queryImages(
+            selection = "${MediaStore.Images.Media.BUCKET_ID} = ?",
+            selectionArgs = arrayOf(albumId),
+            albumId = albumId
         )
-        val selection = "${MediaStore.Images.Media.BUCKET_ID} = ?"
-        contentResolver.query(
-            EXTERNAL_URI, projection, selection, arrayOf(albumId),
-            "${MediaStore.Images.Media.DATE_TAKEN} DESC"
-        )?.use { cursor ->
-            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-            val dateCol = cursor.getColumnIndex(MediaStore.Images.Media.DATE_TAKEN)
-            while (cursor.moveToNext()) {
-                val id = cursor.getLong(idCol)
-                val uri = ContentUris.withAppendedId(EXTERNAL_URI, id).toString()
-                val date = if (dateCol >= 0) cursor.getLong(dateCol) else 0L
-                images.add(MediaImage(id, uri, albumId, date))
-            }
-        }
-        return images
-    }
 
-    override fun allPhotos(): List<MediaImage> {
+    override fun allPhotos(): List<MediaImage> =
+        queryImages(selection = null, selectionArgs = null, albumId = "AllPhotos")
+
+    /**
+     * Reads photo metadata and orders rows by the date the gallery should display.
+     *
+     * [MediaStore.Images.Media.DATE_TAKEN] is the capture time from the image's EXIF
+     * metadata. Screenshots, downloads, and older imports can have no capture time;
+     * for those, [MediaStore.Images.Media.DATE_ADDED] is used instead. MediaStore
+     * cannot sort by that combined value, so the rows are ordered after querying.
+     * The provider's DATE_ADDED order remains the stable tie-breaker.
+     */
+    private fun queryImages(
+        selection: String?,
+        selectionArgs: Array<String>?,
+        albumId: String
+    ): List<MediaImage> {
         val images = mutableListOf<MediaImage>()
         val projection = arrayOf(
             MediaStore.Images.Media._ID,
+            MediaStore.Images.Media.DATE_TAKEN,
             MediaStore.Images.Media.DATE_ADDED
         )
         contentResolver.query(
-            EXTERNAL_URI, projection, null, null,
+            EXTERNAL_URI, projection, selection, selectionArgs,
             "${MediaStore.Images.Media.DATE_ADDED} DESC"
         )?.use { cursor ->
             val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-            val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
+            val takenCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_TAKEN)
+            val addedCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idCol)
                 val uri = ContentUris.withAppendedId(EXTERNAL_URI, id).toString()
-                val date = cursor.getLong(dateCol)
-                images.add(MediaImage(id, uri, "AllPhotos", date))
+                // DATE_TAKEN is epoch milliseconds; DATE_ADDED is epoch seconds.
+                val takenMs = cursor.getLong(takenCol)
+                val addedMs = cursor.getLong(addedCol) * 1000L
+                images.add(MediaImage(id, uri, albumId, if (takenMs > 0L) takenMs else addedMs))
             }
         }
-        return images
+        return images.sortedByDescending { it.dateTaken }
     }
 
     override fun normalizeUri(uri: String): String? {

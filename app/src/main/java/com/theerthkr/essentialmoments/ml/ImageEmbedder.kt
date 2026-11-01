@@ -7,7 +7,7 @@ import android.net.Uri
  * Backend-agnostic contract for computing normalized image embeddings.
  *
  * Implementations encapsulate model-specific preprocessing (resizing, channel layout,
- * mean/std normalization), hardware runtime execution (e.g. LiteRT, ONNX Runtime),
+ * mean/std normalization), hardware runtime execution (ONNX Runtime),
  * and L2 normalization.
  */
 interface ImageEmbedder : AutoCloseable {

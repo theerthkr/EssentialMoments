@@ -163,7 +163,7 @@ class ModelActivity : ComponentActivity() {
 
         } catch (e: Exception) {
             e.printStackTrace()
-            "Error: ${e.localizedMessage}"
+            "Error: ${formatError(e)}"
         }
     }
 
@@ -180,8 +180,19 @@ class ModelActivity : ComponentActivity() {
 
         } catch (e: Exception) {
             e.printStackTrace()
-            "Error: ${e.localizedMessage}"
+            "Error: ${formatError(e)}"
         }
+    }
+
+    /** Walks the cause chain so a staged-file / ORT failure reports its root cause, not just a wrapper. */
+    private fun formatError(e: Throwable): String {
+        var root: Throwable = e
+        var cause: Throwable? = e.cause
+        while (cause != null) {
+            root = cause
+            cause = cause.cause
+        }
+        return "${e::class.simpleName}: ${root.message}"
     }
 
 

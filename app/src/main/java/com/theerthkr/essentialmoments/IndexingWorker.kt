@@ -34,11 +34,25 @@ class IndexingWorker(appContext: Context, workerParams: WorkerParameters) :
     private val channelId = "indexing_channel"
 
     override suspend fun doWork(): Result {
-        setForeground(createForegroundInfo())
-        Log.d(TAG, "Worker promoted to Foreground Service.")
+        try {
+            setForeground(createForegroundInfo())
+            Log.d(TAG, "Worker promoted to Foreground Service.")
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not promote to foreground service: ${e.message}")
+        }
 
         val app = applicationContext as App
         val indexer = app.photoIndexer
+
+        if (!IndexingScheduler.isIndexingEnabled(applicationContext)) {
+            Log.d(TAG, "Worker stopped: indexing is disabled in settings.")
+            return Result.success()
+        }
+
+        if (!com.theerthkr.essentialmoments.ml.EmbeddingModelFactory.isVisionReady(applicationContext)) {
+            Log.d(TAG, "Worker stopped: vision model is not downloaded yet.")
+            return Result.success()
+        }
 
         val indexAll = inputData.getBoolean(IndexingScheduler.KEY_INDEX_ALL, false)
         val providedUris = inputData.getStringArray(IndexingScheduler.KEY_IMAGE_URIS)?.toList()

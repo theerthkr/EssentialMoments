@@ -15,6 +15,8 @@ class SigLIPTokenizerTest {
     @Before
     fun setUp() {
         val vocabFile = sequenceOf(
+            File("models/onnx_int8/siglip2_vocab.bin"),
+            File("../models/onnx_int8/siglip2_vocab.bin"),
             File("src/main/assets/onnx_int8/siglip2_vocab.bin"),
             File("app/src/main/assets/onnx_int8/siglip2_vocab.bin")
         ).first { it.exists() }

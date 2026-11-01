@@ -8,6 +8,7 @@ import android.net.Uri
 import com.theerthkr.essentialmoments.l2Normalize
 import com.theerthkr.essentialmoments.ml.ImageEmbedder
 import com.theerthkr.essentialmoments.ml.SiglipImagePreprocessor
+import com.theerthkr.essentialmoments.ml.model.ModelRole
 import com.theerthkr.essentialmoments.uriToBitmap
 import java.nio.FloatBuffer
 
@@ -23,9 +24,9 @@ class OnnxSiglipImageEmbedder(context: Context) : ImageEmbedder {
     override val embeddingDimension: Int = EMBEDDING_DIM
 
     private val appContext = context.applicationContext
-    private var session: OrtSession? = OnnxModelLoader.createSessionFromAsset(
+    private var session: OrtSession? = OnnxModelLoader.createSessionFromStore(
         appContext,
-        MODEL_FILE,
+        ModelRole.VISION,
         TAG
     )
 
@@ -71,7 +72,6 @@ class OnnxSiglipImageEmbedder(context: Context) : ImageEmbedder {
         private const val TAG = "OnnxSiglipImageEmbedder"
         const val MODEL_ID = "siglip2_base_patch16_224_onnx_int8"
         const val EMBEDDING_DIM = 768
-        const val MODEL_FILE = "onnx_int8/vision_model_int8.onnx"
         internal const val INPUT_NAME = "pixel_values"
         internal const val OUTPUT_NAME = "pooler_output"
         private val REQUESTED_OUTPUTS = setOf(OUTPUT_NAME)

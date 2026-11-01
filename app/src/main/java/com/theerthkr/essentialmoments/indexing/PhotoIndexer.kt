@@ -1,7 +1,7 @@
 package com.theerthkr.essentialmoments.indexing
 
-import android.net.Uri
 import android.util.Log
+import com.theerthkr.essentialmoments.concurrency.BackgroundDispatchers
 import com.theerthkr.essentialmoments.data.VectorIndex
 import com.theerthkr.essentialmoments.media.MediaCatalog
 import com.theerthkr.essentialmoments.ml.ImageEmbedder
@@ -21,7 +21,7 @@ import kotlinx.coroutines.withContext
  * Deep module: all indexing pipeline steps—URI discovery, deduplication,
  * batched embedding, and persistence—hide behind [indexAll] and [indexUris].
  * Callers observe one [state] flow for progress and never touch MediaStore,
- * ObjectBox, or WorkManager keys directly.
+ * the database, or WorkManager keys directly.
  */
 sealed class IndexingState {
     data object Idle : IndexingState()
@@ -55,6 +55,11 @@ class PhotoIndexer(
     /** Single source of truth for indexing progress. Observed by Workers and ViewModels. */
     val state: StateFlow<IndexingState> = _state.asStateFlow()
 
+    /** Resets the state back to Idle (e.g. when cancelled or stopped). */
+    fun resetState() {
+        _state.value = IndexingState.Idle
+    }
+
     /** Prevents concurrent indexing. Second caller suspends until the first finishes. */
     private val indexingMutex = Mutex()
 
@@ -78,6 +83,7 @@ class PhotoIndexer(
             } catch (e: Exception) {
                 logE("indexAll failed", e)
                 _state.value = IndexingState.Error(e.message ?: "Unknown error")
+                throw e
             }
         }
     }
@@ -91,8 +97,8 @@ class PhotoIndexer(
         indexingMutex.withLock {
             try {
                 _state.value = IndexingState.Indexing(0, uris.size)
-                // Normalize picker/file URIs to canonical MediaStore URIs
-                val normalized = uris.mapNotNull { mediaCatalog.normalizeUri(it) }
+                // Normalize picker/file URIs to canonical MediaStore URIs when possible, falling back to original URI
+                val normalized = uris.map { mediaCatalog.normalizeUri(it) ?: it }
                 indexUrisInternal(normalized)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 _state.value = IndexingState.Idle
@@ -100,6 +106,7 @@ class PhotoIndexer(
             } catch (e: Exception) {
                 logE("indexUris failed", e)
                 _state.value = IndexingState.Error(e.message ?: "Unknown error")
+                throw e
             }
         }
     }
@@ -134,7 +141,11 @@ class PhotoIndexer(
                 currentCoroutineContext().ensureActive()
 
                 val embedding = try {
-                    embedder.getEmbedding(uriString)
+                    // Decode + inference are CPU-bound; keep them on one low-priority
+                    // worker so indexing never starves the UI thread during scrolling.
+                    withContext(BackgroundDispatchers.indexing) {
+                        embedder.getEmbedding(uriString)
+                    }
                 } catch (e: Exception) {
                     logW("Skipping $uriString: ${e.message}")
                     null
@@ -144,7 +155,7 @@ class PhotoIndexer(
                     batch.add(VectorIndex.IndexEntry(uriString, embedding, modelId))
                 }
 
-                // Flush batch to ObjectBox
+                // Flush batch to the vector index
                 if (batch.size >= batchSize) {
                     withContext(Dispatchers.IO) { vectorIndex.putBatch(batch.toList()) }
                     batch.clear()

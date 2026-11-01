@@ -7,6 +7,7 @@ import com.theerthkr.essentialmoments.l2Normalize
 import com.theerthkr.essentialmoments.ml.SigLIPTokenizer
 import com.theerthkr.essentialmoments.ml.SiglipImagePreprocessor
 import com.theerthkr.essentialmoments.ml.TextEmbedder
+import com.theerthkr.essentialmoments.ml.model.ModelRole
 import java.nio.LongBuffer
 
 /**
@@ -26,7 +27,7 @@ class OnnxSiglipTextEmbedder(context: Context) : TextEmbedder {
 
     init {
         tokenizer.initialize()
-        session = OnnxModelLoader.createSessionFromAsset(appContext, MODEL_FILE, TAG)
+        session = OnnxModelLoader.createSessionFromStore(appContext, ModelRole.TEXT, TAG)
     }
 
     override fun getEmbedding(text: String): FloatArray {
@@ -63,7 +64,6 @@ class OnnxSiglipTextEmbedder(context: Context) : TextEmbedder {
         private const val TAG = "OnnxSiglipTextEmbedder"
         const val MODEL_ID = "siglip2_base_patch16_224_onnx_int8"
         const val EMBEDDING_DIM = 768
-        const val MODEL_FILE = "onnx_int8/text_model_int8.onnx"
         internal const val INPUT_NAME = "input_ids"
         internal const val OUTPUT_NAME = "pooler_output"
         private val REQUESTED_OUTPUTS = setOf(OUTPUT_NAME)

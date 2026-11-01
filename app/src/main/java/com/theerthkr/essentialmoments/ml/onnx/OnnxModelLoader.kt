@@ -5,33 +5,45 @@ import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.util.Log
+import com.theerthkr.essentialmoments.ml.ModelNotReadyException
+import com.theerthkr.essentialmoments.ml.model.ModelRole
+import com.theerthkr.essentialmoments.ml.model.ModelStore
 import java.io.File
-import java.io.FileOutputStream
 
 /**
- * Loads an [OrtSession] for an ONNX model bundled in Android `assets/`.
+ * Loads an [OrtSession] for an ONNX model managed by [ModelStore].
  *
- * Because quantized foundation models (e.g. 91 MB vision + 271 MB text) are too large to load
- * via `ByteArray` on the Android JVM heap without risking `OutOfMemoryError`, this loader stages
- * the asset to `noBackupFilesDir/onnx_models/` once and initializes [OrtSession] from the file path
- * so ONNX Runtime can memory-map weights directly in native memory.
+ * Models are no longer shipped inside the APK. They are downloaded by
+ * `ModelDownloadWorker`, verified, and stored in `noBackupFilesDir/ml_models/`.
+ * Loading directly from the file lets ONNX Runtime memory-map quantized weights
+ * instead of copying hundreds of megabytes onto the Android JVM heap.
  */
 internal object OnnxModelLoader {
-
-    private const val MODEL_CACHE_DIR = "onnx_models"
-    private const val COPY_BUFFER_SIZE = 64 * 1024
-    private val stageLock = Any()
 
     val environment: OrtEnvironment
         get() = OrtEnvironment.getEnvironment()
 
-    fun createSessionFromAsset(
+    /**
+     * Opens an ONNX session for [role]. Throws [ModelNotReadyException] when the
+     * file has not been downloaded yet.
+     */
+    fun createSessionFromStore(
         context: Context,
-        assetFileName: String,
+        role: ModelRole,
         tag: String
     ): OrtSession {
-        val stagedFile = stageAssetToFile(context, assetFileName, tag)
-        return createSessionFromFile(stagedFile, tag)
+        val modelFile = ModelStore(context).file(role)
+            ?: throw ModelNotReadyException(role)
+        return try {
+            createSessionFromFile(modelFile, tag)
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to load ${modelFile.name}; deleting the corrupted file", e)
+            modelFile.delete()
+            throw IllegalStateException(
+                "${role.displayName} model file was corrupted. Re-download the model in Settings.",
+                e
+            )
+        }
     }
 
     fun createSessionFromFile(
@@ -46,44 +58,12 @@ internal object OnnxModelLoader {
         }
         return options.use { sessionOptions ->
             env.createSession(modelFile.absolutePath, sessionOptions).also {
-                Log.d(tag, "Initialized OrtSession from ${modelFile.name} (${modelFile.length() / (1024 * 1024)} MB)")
+                Log.d(
+                    tag,
+                    "Initialized OrtSession from ${modelFile.name} " +
+                        "(${modelFile.length() / (1024 * 1024)} MB)"
+                )
             }
-        }
-    }
-
-    private fun stageAssetToFile(
-        context: Context,
-        assetFileName: String,
-        tag: String
-    ): File {
-        synchronized(stageLock) {
-            val cacheDir = File(context.noBackupFilesDir, MODEL_CACHE_DIR)
-            if (!cacheDir.exists()) {
-                cacheDir.mkdirs()
-            }
-            val targetFile = File(cacheDir, assetFileName)
-            if (targetFile.exists() && targetFile.length() > 0L) {
-                return targetFile
-            }
-
-            val tempFile = File(cacheDir, "$assetFileName.tmp")
-            Log.d(tag, "Staging ONNX asset $assetFileName to ${targetFile.absolutePath}...")
-            context.assets.open(assetFileName).use { input ->
-                FileOutputStream(tempFile).use { output ->
-                    val buffer = ByteArray(COPY_BUFFER_SIZE)
-                    while (true) {
-                        val read = input.read(buffer)
-                        if (read <= 0) break
-                        output.write(buffer, 0, read)
-                    }
-                    output.flush()
-                }
-            }
-            if (!tempFile.renameTo(targetFile)) {
-                tempFile.copyTo(targetFile, overwrite = true)
-                tempFile.delete()
-            }
-            return targetFile
         }
     }
 

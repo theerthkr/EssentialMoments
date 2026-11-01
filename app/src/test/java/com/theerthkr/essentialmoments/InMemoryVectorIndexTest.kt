@@ -2,6 +2,7 @@ package com.theerthkr.essentialmoments
 
 import com.theerthkr.essentialmoments.data.InMemoryVectorIndex
 import com.theerthkr.essentialmoments.data.VectorIndex
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -11,7 +12,7 @@ class InMemoryVectorIndexTest {
     private val MODEL_ID = "modelA"
 
     @Test
-    fun testFilterUnindexed() {
+    fun testFilterUnindexed() = runBlocking {
         val index = InMemoryVectorIndex()
         index.putBatch(listOf(
             VectorIndex.IndexEntry("uri1", floatArrayOf(1.0f, 0.0f), MODEL_ID)
@@ -22,7 +23,7 @@ class InMemoryVectorIndexTest {
     }
 
     @Test
-    fun testFilterUnindexedIsScopedByModelId() {
+    fun testFilterUnindexedIsScopedByModelId() = runBlocking {
         val index = InMemoryVectorIndex()
         index.putBatch(listOf(
             VectorIndex.IndexEntry("uri1", floatArrayOf(1.0f, 0.0f), "modelA")
@@ -34,7 +35,7 @@ class InMemoryVectorIndexTest {
     }
 
     @Test
-    fun testQueryAndRanking() {
+    fun testQueryAndRanking() = runBlocking {
         val index = InMemoryVectorIndex()
         index.putBatch(listOf(
             VectorIndex.IndexEntry("target", floatArrayOf(1.0f, 0.0f), MODEL_ID),
@@ -52,7 +53,7 @@ class InMemoryVectorIndexTest {
     }
 
     @Test
-    fun testQueryAllIsScopedByModelId() {
+    fun testQueryAllIsScopedByModelId() = runBlocking {
         val index = InMemoryVectorIndex()
         index.putBatch(listOf(
             VectorIndex.IndexEntry("a", floatArrayOf(1.0f, 0.0f), "modelA"),
@@ -65,7 +66,7 @@ class InMemoryVectorIndexTest {
     }
 
     @Test
-    fun testQueryAllReturnsAllRanked() {
+    fun testQueryAllReturnsAllRanked() = runBlocking {
         val index = InMemoryVectorIndex()
         index.putBatch(listOf(
             VectorIndex.IndexEntry("a", floatArrayOf(0.5f, 0.5f), MODEL_ID),
@@ -79,7 +80,7 @@ class InMemoryVectorIndexTest {
     }
 
     @Test
-    fun testQueryAllSkipsDimensionMismatch() {
+    fun testQueryAllSkipsDimensionMismatch() = runBlocking {
         val index = InMemoryVectorIndex()
         index.putBatch(listOf(
             VectorIndex.IndexEntry("same", floatArrayOf(1.0f, 0.0f), MODEL_ID),

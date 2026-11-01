@@ -2,29 +2,23 @@ package com.theerthkr.essentialmoments
 
 import android.content.Intent
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -44,8 +38,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.work.WorkManager
 import coil.compose.AsyncImage
+import com.theerthkr.essentialmoments.media.mediaThumbnailRequest
+import com.theerthkr.essentialmoments.ui.model.SearchModelGate
+import com.theerthkr.essentialmoments.ui.model.openModelManager
 import com.theerthkr.essentialmoments.ui.theme.EssentialMomentsTheme
 import kotlinx.coroutines.delay
 
@@ -85,11 +81,14 @@ class SearchActivity : ComponentActivity() {
 fun SearchScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val vm: SearchViewModel = viewModel(factory = SearchViewModel.Factory(context))
+    val resultCellSizePx = rememberThumbnailSizePx(3)
 
     val query by vm.query.collectAsStateWithLifecycle()
     val searchResults by vm.searchResults.collectAsStateWithLifecycle()
     val isSearching by vm.isSearching.collectAsStateWithLifecycle()
     val indexingState by vm.indexingState.collectAsStateWithLifecycle()
+    val app = context.applicationContext as App
+    val modelStatus by app.modelManager.state.collectAsStateWithLifecycle()
 
     val focusManager = LocalFocusManager.current
 
@@ -159,6 +158,9 @@ fun SearchScreen(onBack: () -> Unit) {
         // ── Content Area ──────────────────────────────────────────
         Box(modifier = Modifier.fillMaxSize()) {
             when {
+                !modelStatus.textReady -> SearchModelGate(
+                    onManage = { openModelManager(context) }
+                )
                 isSearching -> SearchingAnimation()
                 query.isEmpty() -> EmptyQueryHint()
                 searchResults.isEmpty() -> NoResultsHint(query = query)
@@ -171,8 +173,11 @@ fun SearchScreen(onBack: () -> Unit) {
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         items(searchResults, key = { it.uri }) { result ->
+                            val imageRequest = remember(context, result.uri, resultCellSizePx) {
+                                mediaThumbnailRequest(context, result.uri, resultCellSizePx)
+                            }
                             AsyncImage(
-                                model = result.uri,
+                                model = imageRequest,
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier

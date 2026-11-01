@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
+import com.theerthkr.essentialmoments.ui.model.ModelDownloadScreen
 import com.theerthkr.essentialmoments.ui.theme.EssentialMomentsTheme
 
 class OnboardingActivity : ComponentActivity() {
@@ -74,7 +75,7 @@ class OnboardingActivity : ComponentActivity() {
 }
 
 enum class OnboardingStep {
-    Splash, Welcome, Permissions, NotificationPermission, Privacy
+    Splash, Welcome, Permissions, NotificationPermission, Models, Privacy
 }
 
 @OptIn(ExperimentalAnimationApi::class)
@@ -108,7 +109,11 @@ fun OnboardingScreen(
                 })
                 OnboardingStep.Welcome -> WelcomeStep(onNext = { currentStep = OnboardingStep.Permissions })
                 OnboardingStep.Permissions -> PermissionsStep(onNext = { currentStep = OnboardingStep.NotificationPermission })
-                OnboardingStep.NotificationPermission -> NotificationPermissionStep(onNext = { currentStep = OnboardingStep.Privacy })
+                OnboardingStep.NotificationPermission -> NotificationPermissionStep(onNext = { currentStep = OnboardingStep.Models })
+                OnboardingStep.Models -> ModelDownloadScreen(
+                    onContinue = { currentStep = OnboardingStep.Privacy },
+                    onSkip = { currentStep = OnboardingStep.Privacy }
+                )
                 OnboardingStep.Privacy -> PrivacyStep(onFinished = onFinished)
             }
         }

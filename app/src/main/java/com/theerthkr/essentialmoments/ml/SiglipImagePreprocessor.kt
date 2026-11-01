@@ -3,7 +3,7 @@ package com.theerthkr.essentialmoments.ml
 import android.graphics.Bitmap
 
 /**
- * Shared SigLIP 2 image preprocessing pipeline used across runtime adapters (ONNX Runtime, LiteRT).
+ * Shared SigLIP 2 image preprocessing pipeline used by the ONNX Runtime adapter.
  *
  * Encapsulates `224×224` bilinear scaling, temporary [Bitmap] recycling, and packed `0xAARRGGBB`
  * conversion into a channel-first [NCHW Tensor] (`[1, 3, 224, 224]`) normalized to `[-1.0, 1.0]`.
