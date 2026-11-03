@@ -99,6 +99,11 @@ android {
         // launch does not pay a large decompression cost.
         if (bundleModels) noCompress += listOf("onnx", "bin")
     }
+    packaging {
+        jniLibs {
+            keepDebugSymbols += "**/*.so"
+        }
+    }
 }
 
 dependencies {
