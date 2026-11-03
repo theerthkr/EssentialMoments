@@ -29,7 +29,7 @@ fun gradleOrLocalProperty(name: String): String? {
 
 val modelManifestUrl: String =
     gradleOrLocalProperty("modelManifestUrl")
-        ?: "https://github.com/theerthkr/EssentialMoments-models/releases/latest/download/model-manifest.json"
+        ?: "https://gitlab.com/theerthkr211/essential-moments-assets/-/raw/main/model-manifest.json?inline=false"
 
 /** Optional Base64 (X.509/SPKI) ECDSA P-256 key used to verify `model-manifest.json.sig`. */
 val modelManifestPublicKey: String =
@@ -70,8 +70,12 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+    }
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
     }
     buildFeatures {
         compose = true
@@ -121,6 +125,10 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     kapt(libs.androidx.room.compiler)
+}
+
+kotlin {
+    jvmToolchain(21)
 }
 
 /**
