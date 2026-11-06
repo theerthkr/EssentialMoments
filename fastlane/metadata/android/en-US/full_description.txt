@@ -11,3 +11,7 @@ Search your personal photo collection using natural language descriptions like "
 <b>Requirements:</b>
 • Android 11 (API level 30) or higher.
 • Initial model download requires approximately 380 MB of storage.
+
+<b>Permissions:</b>
+• Photos / Media Storage (READ_MEDIA_IMAGES / READ_EXTERNAL_STORAGE): Required to index and display photos from your device gallery. On supported Android versions, you can choose full gallery access or select specific photos.
+• Internet Access (INTERNET): Used exclusively to download the quantized AI model weights and verify the manifest on initial setup. No data or photos are ever transmitted externally.
