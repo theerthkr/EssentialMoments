@@ -14,8 +14,11 @@
 
 # Uncomment this to preserve the line number information for
 # debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+-keepattributes SourceFile,LineNumberTable
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Shrink unused code and optimize bytecode, while keeping original class/method
+# names for readable crash reports and F-Droid transparency.
+-dontobfuscate
+
+# ONNX Runtime JNI bridge accesses classes, fields, and constructors by name from native code.
+-keep class ai.onnxruntime.** { *; }
