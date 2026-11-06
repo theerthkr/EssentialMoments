@@ -2,12 +2,12 @@ Essential Moments is a private, completely offline AI-powered gallery search app
 
 Search your personal photo collection using natural language descriptions like "cat sitting in a box", "sunset on the beach", or "documents on a desk".
 
-### Key Features
-- 100% On-Device AI: Runs quantized SigLIP 2 vision-language models locally using ONNX Runtime.
-- Absolute Privacy: Your photos, metadata, and embeddings never leave your device. Zero telemetry, zero analytics, zero ads.
-- Natural Language Photo Search: Find photos by visual concepts without relying on tags, file names, or manual folders.
-- Background Indexing: Efficiently indexes photos in the background using Android WorkManager and AndroidX Room.
+<b>Key Features:</b>
+• 100% On-Device AI: Runs quantized SigLIP 2 vision-language models locally using ONNX Runtime.
+• Absolute Privacy: Your photos, metadata, and embeddings never leave your device. Zero telemetry, zero analytics, zero ads.
+• Natural Language Photo Search: Find photos by visual concepts without relying on tags, file names, or manual folders.
+• Background Indexing: Efficiently indexes photos in the background using Android WorkManager and AndroidX Room.
 
-### Requirements
-- Android 11 (API level 30) or higher.
-- Initial model download requires approximately 380 MB of storage.
+<b>Requirements:</b>
+• Android 11 (API level 30) or higher.
+• Initial model download requires approximately 380 MB of storage.
