@@ -105,6 +105,36 @@ android {
             keepDebugSymbols += "**/*.so"
         }
     }
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            isUniversalApk = false
+        }
+    }
+}
+
+// Map each ABI to a distinct code so 64-bit devices get higher version codes than 32-bit:
+// Base versionCode 1 -> armeabi-v7a: 1001, arm64-v8a: 1002, x86: 1003, x86_64: 1004
+val abiVersionCodes = mapOf(
+    "armeabi-v7a" to 1,
+    "arm64-v8a" to 2,
+    "x86" to 3,
+    "x86_64" to 4
+)
+
+androidComponents {
+    onVariants { variant ->
+        variant.outputs.forEach { output ->
+            val abi = output.filters.find {
+                it.filterType == com.android.build.api.variant.FilterConfiguration.FilterType.ABI
+            }?.identifier
+            val abiOffset = abiVersionCodes[abi] ?: 0
+            val baseCode = android.defaultConfig.versionCode ?: 1
+            output.versionCode.set(baseCode * 1000 + abiOffset)
+        }
+    }
 }
 
 dependencies {
