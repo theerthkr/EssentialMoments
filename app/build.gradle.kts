@@ -104,6 +104,9 @@ android {
         jniLibs {
             keepDebugSymbols += "**/*.so"
         }
+        resources {
+            excludes += "/assets/dexopt/**"
+        }
     }
     splits {
         abi {
@@ -134,6 +137,13 @@ androidComponents {
             val baseCode = android.defaultConfig.versionCode ?: 1
             output.versionCode.set(baseCode * 1000 + abiOffset)
         }
+    }
+}
+
+// Disable ART / Baseline profile compilation for deterministic reproducible builds across machines
+tasks.configureEach {
+    if (name.contains("ArtProfile")) {
+        enabled = false
     }
 }
 
