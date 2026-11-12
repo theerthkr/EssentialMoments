@@ -106,6 +106,7 @@ android {
         }
         resources {
             excludes += "/assets/dexopt/**"
+            excludes += "META-INF/version-control-info.textproto"
         }
     }
     splits {
