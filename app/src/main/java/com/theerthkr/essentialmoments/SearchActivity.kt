@@ -33,7 +33,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -84,15 +86,18 @@ fun SearchScreen(onBack: () -> Unit) {
     val resultCellSizePx = rememberThumbnailSizePx(3)
 
     val query by vm.query.collectAsStateWithLifecycle()
-    val searchResults by vm.searchResults.collectAsStateWithLifecycle()
-    val isSearching by vm.isSearching.collectAsStateWithLifecycle()
+    val searchState by vm.searchState.collectAsStateWithLifecycle()
     val indexingState by vm.indexingState.collectAsStateWithLifecycle()
     val app = context.applicationContext as App
     val modelStatus by app.modelManager.state.collectAsStateWithLifecycle()
 
     val focusManager = LocalFocusManager.current
-
-
+    // Single submission path shared by the keyboard action and the on-screen buttons.
+    val submitSearch = {
+        focusManager.clearFocus()
+        vm.submitSearch()
+    }
+    val content = resolveSearchContent(query, searchState)
 
     Column(modifier = Modifier.fillMaxSize()) {
 
@@ -117,11 +122,18 @@ fun SearchScreen(onBack: () -> Unit) {
                 contentAlignment = Alignment.CenterStart
             ) {
                 Row(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.width(8.dp))
+                    IconButton(
+                        onClick = submitSearch,
+                        enabled = query.isNotBlank(),
+                        colors = IconButtonDefaults.iconButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    ) {
+                        Icon(Icons.Default.Search, contentDescription = "Search")
+                    }
                     Box(modifier = Modifier.weight(1f)) {
                         if (query.isEmpty()) {
                             Text("Search your photos…", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
@@ -133,11 +145,8 @@ fun SearchScreen(onBack: () -> Unit) {
                             textStyle = TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 15.sp),
                             singleLine = true,
                             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
-                            keyboardActions = KeyboardActions(onSearch = {
-                                focusManager.clearFocus()
-                                vm.search(query)
-                            })
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { submitSearch() })
                         )
                     }
                     if (query.isNotEmpty()) {
@@ -161,10 +170,18 @@ fun SearchScreen(onBack: () -> Unit) {
                 !modelStatus.textReady -> SearchModelGate(
                     onManage = { openModelManager(context) }
                 )
-                isSearching -> SearchingAnimation()
-                query.isEmpty() -> EmptyQueryHint()
-                searchResults.isEmpty() -> NoResultsHint(query = query)
-                else -> {
+                content is SearchContent.Searching -> SearchingAnimation()
+                content is SearchContent.EmptyQuery -> EmptyQueryHint()
+                content is SearchContent.Pending -> PendingSearchHint(
+                    query = content.query,
+                    onSearch = submitSearch
+                )
+                content is SearchContent.NoResults -> NoResultsHint(query = content.query)
+                content is SearchContent.Error -> SearchErrorHint(
+                    query = content.query,
+                    onRetry = submitSearch
+                )
+                content is SearchContent.Results -> {
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(3),
                         modifier = Modifier.fillMaxSize(),
@@ -172,7 +189,7 @@ fun SearchScreen(onBack: () -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        items(searchResults, key = { it.uri }) { result ->
+                        items(content.results, key = { it.uri }) { result ->
                             val imageRequest = remember(context, result.uri, resultCellSizePx) {
                                 mediaThumbnailRequest(context, result.uri, resultCellSizePx)
                             }
@@ -288,6 +305,64 @@ private fun NoResultsHint(query: String) {
         verticalArrangement = Arrangement.Center
     ) {
         Text(text = "🙁", fontSize = 48.sp)
-        Text("No results for \"$query\"", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "No results for \"$query\"",
+            style = MaterialTheme.typography.titleMedium,
+            textAlign = TextAlign.Center,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 32.dp)
+        )
+    }
+}
+
+/** Shown when text has been entered but not searched yet, e.g. after hiding the keyboard. */
+@Composable
+private fun PendingSearchHint(query: String, onSearch: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(text = "🔍", fontSize = 48.sp)
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            "Search for \"$query\"",
+            style = MaterialTheme.typography.titleMedium,
+            textAlign = TextAlign.Center,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 32.dp)
+        )
+        Text("Not searched yet", color = Color.Gray)
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = onSearch) {
+            Text("Search")
+        }
+    }
+}
+
+@Composable
+private fun SearchErrorHint(query: String, onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(text = "⚠️", fontSize = 48.sp)
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            "Couldn't search for \"$query\"",
+            style = MaterialTheme.typography.titleMedium,
+            textAlign = TextAlign.Center,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 32.dp)
+        )
+        Text("Something went wrong. Please try again.", color = Color.Gray)
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = onRetry) {
+            Text("Retry")
+        }
     }
 }
