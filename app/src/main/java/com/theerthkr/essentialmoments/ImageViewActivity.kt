@@ -27,6 +27,9 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.theerthkr.essentialmoments.ui.theme.EssentialMomentsTheme
 import androidx.activity.compose.LocalActivity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class ImageViewActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,6 +50,7 @@ class ImageViewActivity : ComponentActivity() {
 @Composable
 fun ImagePagerScreen(uri: String, name: String) {
     val context = LocalActivity.current as Activity
+    val scope = rememberCoroutineScope()
     var showInfoSheet by remember { mutableStateOf(false) }
     var imageInfo by remember { mutableStateOf<ImageInfo?>(null) }
 
@@ -75,10 +79,17 @@ fun ImagePagerScreen(uri: String, name: String) {
             )
 
             IconButton(onClick = {
-                if (imageInfo == null) {
-                    imageInfo = getImageInfo(context, uri)
+                if (imageInfo != null) {
+                    showInfoSheet = true
+                } else {
+                    // MediaStore + EXIF reads hit disk; keep them off the main
+                    // thread instead of blocking the click handler.
+                    scope.launch {
+                        val info = withContext(Dispatchers.IO) { getImageInfo(context, uri) }
+                        imageInfo = info
+                        showInfoSheet = true
+                    }
                 }
-                showInfoSheet = true
             }) {
                 Icon(Icons.Default.Info, "Info", tint = Color.White)
             }
@@ -127,12 +138,14 @@ fun ZoomableImage(uri: String) {
             contentDescription = null,
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    translationX = offset.x,
+                // Gesture-driven scale/translation are read in the Draw phase,
+                // so pan/zoom does not recompose this composable every frame.
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    translationX = offset.x
                     translationY = offset.y
-                ),
+                },
             contentScale = ContentScale.Fit
         )
     }

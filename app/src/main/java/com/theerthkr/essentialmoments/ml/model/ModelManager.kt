@@ -6,7 +6,9 @@ import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import androidx.work.await
 import androidx.work.workDataOf
 import com.theerthkr.essentialmoments.BuildConfig
 import kotlinx.coroutines.CoroutineScope
@@ -15,6 +17,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -71,6 +74,15 @@ class ModelManager(private val context: Context) {
     private val store = ModelStore(appContext)
     private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val workManager = WorkManager.getInstance(appContext)
+
+    /**
+     * The WorkRequest this manager is currently tracking. WorkManager keeps the
+     * history of a unique work name, so this lets us ignore older terminal
+     * records (including a stale failure from a previous session).
+     */
+    @Volatile
+    private var activeRequestId: java.util.UUID? = null
 
     private val client = OkHttpClient.Builder()
         .followRedirects(true)
@@ -87,6 +99,112 @@ class ModelManager(private val context: Context) {
         _state.value = buildStatus(
             manifest = readCachedManifest(),
             error = null
+        )
+        observeDownloadWork()
+    }
+
+    /**
+     * WorkManager owns the download lifecycle: it can start, retry, or fail the
+     * worker even when this object never receives a callback (for example when
+     * the worker cannot be constructed or the app process was restarted).
+     * Mirroring [WorkInfo] into [state] keeps the UI honest in those cases.
+     */
+    private fun observeDownloadWork() {
+        scope.launch {
+            workManager.getWorkInfosForUniqueWorkFlow(UNIQUE_WORK_NAME).collect { infos ->
+                applyWorkInfo(infos)
+            }
+        }
+    }
+
+    private fun applyWorkInfo(infos: List<WorkInfo>) {
+        if (infos.isEmpty()) return
+
+        // A unique work name keeps the history of earlier runs. If we know which
+        // request we started, only follow that one. Otherwise (for example after
+        // a process restart) follow an active run, or the most recent terminal
+        // record. Ignoring older terminal records prevents showing a stale error
+        // on every launch.
+        fun List<WorkInfo>.active(): WorkInfo? = firstOrNull {
+            it.state == WorkInfo.State.RUNNING ||
+                it.state == WorkInfo.State.ENQUEUED ||
+                it.state == WorkInfo.State.BLOCKED
+        }
+
+        val info = if (activeRequestId != null) {
+            // ExistingWorkPolicy.KEEP can discard our new request in favour of a
+            // run that was already active, so fall back to that run.
+            infos.firstOrNull { it.id == activeRequestId }
+                ?: infos.active()
+                ?: return
+        } else {
+            infos.active() ?: infos.last()
+        }
+
+        when (info.state) {
+            WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> {
+                activeRequestId = info.id
+                _state.update {
+                    it.copy(
+                        queued = true,
+                        download = it.download ?: info.downloadProgress()
+                    )
+                }
+            }
+
+            WorkInfo.State.RUNNING -> {
+                activeRequestId = info.id
+                _state.update {
+                    it.copy(
+                        queued = true,
+                        download = info.downloadProgress() ?: it.download
+                    )
+                }
+            }
+
+            WorkInfo.State.SUCCEEDED -> {
+                val wasActive = activeRequestId != null ||
+                    _state.value.queued || _state.value.download != null
+                activeRequestId = null
+                _state.update { it.copy(queued = false, download = null, error = null) }
+                if (wasActive) refreshInstalled()
+            }
+
+            WorkInfo.State.FAILED -> {
+                if (activeRequestId == null) return
+                activeRequestId = null
+                val message = info.outputData.getString(ModelDownloadWorker.KEY_ERROR)
+                    ?: info.progress.getString(ModelDownloadWorker.KEY_ERROR)
+                    ?: _state.value.error
+                    ?: "The model download failed. Please try again."
+                _state.update { it.copy(queued = false, download = null, error = message) }
+            }
+
+            WorkInfo.State.CANCELLED -> {
+                activeRequestId = null
+                _state.update { it.copy(queued = false, download = null) }
+            }
+        }
+    }
+
+    /** Restores progress after the app process was killed mid-download. */
+    private fun WorkInfo.downloadProgress(): DownloadProgress? {
+        val roleName = progress.getString(ModelDownloadWorker.KEY_PROGRESS_ROLE) ?: return null
+        val role = runCatching { ModelRole.valueOf(roleName) }.getOrNull() ?: return null
+        return DownloadProgress(
+            role = role,
+            fileName = progress.getString(ModelDownloadWorker.KEY_PROGRESS_FILE).orEmpty(),
+            bytes = progress.getLong(ModelDownloadWorker.KEY_PROGRESS_BYTES, 0L),
+            totalBytes = progress.getLong(ModelDownloadWorker.KEY_PROGRESS_TOTAL, 0L),
+            overallBytes = progress.getLong(ModelDownloadWorker.KEY_PROGRESS_OVERALL_BYTES, 0L),
+            overallTotalBytes = progress.getLong(
+                ModelDownloadWorker.KEY_PROGRESS_OVERALL_TOTAL,
+                0L
+            ),
+            speedBytesPerSecond = progress.getLong(
+                ModelDownloadWorker.KEY_PROGRESS_SPEED,
+                0L
+            )
         )
     }
 
@@ -179,7 +297,7 @@ class ModelManager(private val context: Context) {
         }
     }
 
-    private fun enqueueDownload(manifest: ModelManifest) {
+    private suspend fun enqueueDownload(manifest: ModelManifest) {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(
                 if (isWifiOnly()) NetworkType.UNMETERED else NetworkType.CONNECTED
@@ -191,21 +309,41 @@ class ModelManager(private val context: Context) {
             .setInputData(workDataOf(ModelDownloadWorker.KEY_MANIFEST to manifest.toJson()))
             .build()
 
-        WorkManager.getInstance(appContext).enqueueUniqueWork(
-            UNIQUE_WORK_NAME,
-            ExistingWorkPolicy.KEEP,
-            request
-        )
+        activeRequestId = request.id
+        // Set the optimistic state before awaiting the enqueue: WorkManager may
+        // run (and fail) the worker as soon as the request is persisted, and the
+        // WorkInfo observer must not be overwritten by the enqueue's completion.
         _state.update { it.copy(queued = true, download = null, error = null) }
+        try {
+            // Awaiting means a failed enqueue is shown to the user instead of a
+            // permanent "waiting" state.
+            workManager.enqueueUniqueWork(
+                UNIQUE_WORK_NAME,
+                ExistingWorkPolicy.KEEP,
+                request
+            ).await()
+        } catch (e: Exception) {
+            activeRequestId = null
+            Log.e(TAG, "Could not enqueue model download", e)
+            _state.update {
+                it.copy(
+                    queued = false,
+                    download = null,
+                    error = "Could not start the download: ${e.readableMessage()}"
+                )
+            }
+        }
     }
 
     fun pauseDownload() {
-        WorkManager.getInstance(appContext).cancelUniqueWork(UNIQUE_WORK_NAME)
+        activeRequestId = null
+        workManager.cancelUniqueWork(UNIQUE_WORK_NAME)
         _state.update { it.copy(queued = false, download = null) }
     }
 
     fun deleteModels() {
-        WorkManager.getInstance(appContext).cancelUniqueWork(UNIQUE_WORK_NAME)
+        activeRequestId = null
+        workManager.cancelUniqueWork(UNIQUE_WORK_NAME)
         com.theerthkr.essentialmoments.indexing.IndexingScheduler.cancel(appContext)
         store.deleteAll()
         prefs.edit().remove(KEY_CACHED_MANIFEST).apply()

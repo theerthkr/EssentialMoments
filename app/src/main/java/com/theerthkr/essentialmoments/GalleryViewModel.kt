@@ -63,4 +63,11 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             _images.value = photos
         }
     }
+
+    /** Drops cached rows when photo access is revoked. */
+    fun clear() {
+        _albums.value = emptyList()
+        _images.value = emptyList()
+        _allImages.value = emptyList()
+    }
 }

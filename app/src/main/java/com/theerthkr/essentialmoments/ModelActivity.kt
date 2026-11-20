@@ -43,7 +43,7 @@ class ModelActivity : ComponentActivity() {
 
     fun triggerIndexing(indexAll: Boolean = false, selectedUris: List<Uri> = emptyList()) {
         if (indexAll) {
-            IndexingScheduler.scheduleIndexAll(this)
+            IndexingScheduler.scheduleIndexNow(this)
         } else {
             IndexingScheduler.scheduleIndexUris(this, selectedUris.map { it.toString() })
         }

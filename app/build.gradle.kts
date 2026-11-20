@@ -163,7 +163,7 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
 
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.26.0")
-    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    implementation("androidx.work:work-runtime-ktx:2.12.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")

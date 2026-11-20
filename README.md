@@ -24,7 +24,7 @@
 ### Option 1: Install the Pre-built APK (Recommended)
 1. Download the latest `.apk` from the [Releases](../../releases) section.
 2. Allow installation from unknown sources on your Android device when prompted.
-3. Launch the app and grant media permissions to initiate local image indexing.
+3. Launch the app and choose full or selected photo access to initiate local image indexing. Photo access can be skipped and granted later from Settings.
 
 ### Option 2: Build from Source
 

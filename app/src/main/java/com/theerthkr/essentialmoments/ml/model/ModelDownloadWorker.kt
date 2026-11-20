@@ -12,6 +12,7 @@ import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import com.theerthkr.essentialmoments.App
 import com.theerthkr.essentialmoments.ModelDownloadActivity
 import com.theerthkr.essentialmoments.R
@@ -58,12 +59,12 @@ class ModelDownloadWorker(
 
     override suspend fun doWork(): Result {
         val rawManifest = inputData.getString(KEY_MANIFEST)
-            ?: return Result.failure()
+            ?: return Result.failure(workDataOf(KEY_ERROR to "Missing model manifest."))
         val manifest = try {
             ModelManifest.parse(rawManifest, "")
         } catch (e: Exception) {
             Log.e(TAG, "Invalid manifest input", e)
-            return Result.failure()
+            return Result.failure(workDataOf(KEY_ERROR to "Invalid model manifest."))
         }
 
         try {
@@ -114,7 +115,14 @@ class ModelDownloadWorker(
                 if (retryable) "Download interrupted — will retry" else "Download failed",
                 indeterminate = false
             )
-            if (retryable) Result.retry() else Result.failure()
+            if (retryable) {
+                // Keep the last error in WorkInfo so retry exhaustion can surface
+                // a useful message instead of a generic failure.
+                setProgress(workDataOf(KEY_ERROR to message))
+                Result.retry()
+            } else {
+                Result.failure(workDataOf(KEY_ERROR to message))
+            }
         }
     }
 
@@ -174,17 +182,19 @@ class ModelDownloadWorker(
                                 val speed = ((downloaded - lastBytes) * 1000L) /
                                     (now - lastTime).coerceAtLeast(1L)
                                 val overall = completedBefore + downloaded
-                                manager.onProgress(
-                                    DownloadProgress(
-                                        role = spec.role,
-                                        fileName = spec.path,
-                                        bytes = downloaded,
-                                        totalBytes = fileTotal,
-                                        overallBytes = overall,
-                                        overallTotalBytes = overallTotal,
-                                        speedBytesPerSecond = speed
-                                    )
+                                val progress = DownloadProgress(
+                                    role = spec.role,
+                                    fileName = spec.path,
+                                    bytes = downloaded,
+                                    totalBytes = fileTotal,
+                                    overallBytes = overall,
+                                    overallTotalBytes = overallTotal,
+                                    speedBytesPerSecond = speed
                                 )
+                                manager.onProgress(progress)
+                                // Persisted by WorkManager so the UI can restore
+                                // progress after the process is killed.
+                                setProgress(progress.toWorkData())
                                 updateProgressNotification(overall, overallTotal, speed)
                                 lastBytes = downloaded
                                 lastTime = now
@@ -322,6 +332,16 @@ class ModelDownloadWorker(
     companion object {
         private const val TAG = "ModelDownloadWorker"
         const val KEY_MANIFEST = "MODEL_MANIFEST_JSON"
+        const val KEY_ERROR = "MODEL_ERROR"
+
+        const val KEY_PROGRESS_ROLE = "MODEL_PROGRESS_ROLE"
+        const val KEY_PROGRESS_FILE = "MODEL_PROGRESS_FILE"
+        const val KEY_PROGRESS_BYTES = "MODEL_PROGRESS_BYTES"
+        const val KEY_PROGRESS_TOTAL = "MODEL_PROGRESS_TOTAL"
+        const val KEY_PROGRESS_OVERALL_BYTES = "MODEL_PROGRESS_OVERALL_BYTES"
+        const val KEY_PROGRESS_OVERALL_TOTAL = "MODEL_PROGRESS_OVERALL_TOTAL"
+        const val KEY_PROGRESS_SPEED = "MODEL_PROGRESS_SPEED"
+
         private const val CHANNEL_ID = "model_download_channel"
         private const val NOTIFICATION_ID = 202
         private const val BUFFER_SIZE = 64 * 1024
@@ -329,6 +349,16 @@ class ModelDownloadWorker(
         private const val NOTIFICATION_UPDATE_INTERVAL_MS = 1000L
     }
 }
+
+private fun DownloadProgress.toWorkData() = workDataOf(
+    ModelDownloadWorker.KEY_PROGRESS_ROLE to role.name,
+    ModelDownloadWorker.KEY_PROGRESS_FILE to fileName,
+    ModelDownloadWorker.KEY_PROGRESS_BYTES to bytes,
+    ModelDownloadWorker.KEY_PROGRESS_TOTAL to totalBytes,
+    ModelDownloadWorker.KEY_PROGRESS_OVERALL_BYTES to overallBytes,
+    ModelDownloadWorker.KEY_PROGRESS_OVERALL_TOTAL to overallTotalBytes,
+    ModelDownloadWorker.KEY_PROGRESS_SPEED to speedBytesPerSecond
+)
 
 private fun formatMb(bytes: Long): String {
     val mb = bytes / (1024.0 * 1024.0)

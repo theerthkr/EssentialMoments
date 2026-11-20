@@ -15,6 +15,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.theerthkr.essentialmoments.indexing.IndexingScheduler
 import com.theerthkr.essentialmoments.indexing.IndexingState
+import com.theerthkr.essentialmoments.permissions.AppPermissions
 import kotlinx.coroutines.launch
 
 /**
@@ -49,14 +50,25 @@ class IndexingWorker(appContext: Context, workerParams: WorkerParameters) :
             return Result.success()
         }
 
+        val indexAll = inputData.getBoolean(IndexingScheduler.KEY_INDEX_ALL, false)
+        val providedUris = inputData.getStringArray(IndexingScheduler.KEY_IMAGE_URIS)?.toList()
+            ?: emptyList()
+
+        if (indexAll && !AppPermissions.mediaAccess(applicationContext).canReadPhotos) {
+            Log.d(TAG, "Worker stopped: photo access is not granted.")
+            return Result.success()
+        }
+
+        val background = inputData.getBoolean(IndexingScheduler.KEY_BACKGROUND_INDEXING, false)
+        if (background && !IndexingScheduler.isBackgroundIndexingActive(applicationContext)) {
+            Log.d(TAG, "Worker stopped: background indexing is not active.")
+            return Result.success()
+        }
+
         if (!com.theerthkr.essentialmoments.ml.EmbeddingModelFactory.isVisionReady(applicationContext)) {
             Log.d(TAG, "Worker stopped: vision model is not downloaded yet.")
             return Result.success()
         }
-
-        val indexAll = inputData.getBoolean(IndexingScheduler.KEY_INDEX_ALL, false)
-        val providedUris = inputData.getStringArray(IndexingScheduler.KEY_IMAGE_URIS)?.toList()
-            ?: emptyList()
 
         return kotlinx.coroutines.coroutineScope {
             val observerJob = launch {
