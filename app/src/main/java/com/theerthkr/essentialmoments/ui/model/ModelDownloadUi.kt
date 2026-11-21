@@ -63,6 +63,8 @@ import com.theerthkr.essentialmoments.App
 import com.theerthkr.essentialmoments.ModelDownloadActivity
 import com.theerthkr.essentialmoments.ml.model.ModelRole
 import com.theerthkr.essentialmoments.ui.theme.LogoRed
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 private const val FALLBACK_VISION_MB = 91L
@@ -302,9 +304,9 @@ fun ModelDownloadScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = if (app.modelManager.isWifiOnly()) {
-                            "Waiting for a Wi-Fi connection…"
+                            "Queued — waiting for Wi-Fi…"
                         } else {
-                            "Waiting for a network connection…"
+                            "Queued — waiting to start…"
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -564,8 +566,14 @@ private fun ModelRow(
 fun ModelSetupBanner(onClick: () -> Unit) {
     val context = LocalContext.current
     val app = context.applicationContext as App
-    val status by app.modelManager.state.collectAsStateWithLifecycle()
-    if (status.visionReady) return
+    // The banner only depends on vision readiness. Collecting the whole status
+    // would recompose it on every download-progress tick.
+    val visionReady by remember(app) {
+        app.modelManager.state
+            .map { it.visionReady }
+            .distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = app.modelManager.state.value.visionReady)
+    if (visionReady) return
 
     Card(
         shape = RoundedCornerShape(16.dp),

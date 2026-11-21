@@ -28,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -40,6 +41,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
@@ -74,8 +78,20 @@ class AlbumDetailActivity : ComponentActivity() {
         viewModel: GalleryViewModel = viewModel()
     ) {
         val context = LocalContext.current      // 1. Tell the ViewModel to fetch images for this specific album
+        val lifecycleOwner = LocalLifecycleOwner.current
         LaunchedEffect(albumId) {
             viewModel.fetchImagesForAlbum(albumId)
+        }
+
+        // Photo access or the selected-photo set may change in system settings.
+        DisposableEffect(lifecycleOwner, albumId) {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    viewModel.fetchImagesForAlbum(albumId)
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }
 
         // 2. Observe the images list from the ViewModel
@@ -91,7 +107,11 @@ class AlbumDetailActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(top = 90.dp)
             ) {
-                items(items = images, key = { it.uri }) { image ->
+                items(
+                    items = images,
+                    key = { it.uri },
+                    contentType = { "photo" }
+                ) { image ->
                     val imageRequest = remember(context, image.uri, cellSizePx) {
                         mediaThumbnailRequest(context, image.uri, cellSizePx)
                     }

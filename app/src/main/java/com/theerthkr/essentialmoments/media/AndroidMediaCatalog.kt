@@ -23,12 +23,18 @@ class AndroidMediaCatalog(private val contentResolver: ContentResolver) : MediaC
     override fun allPhotoUris(): List<String> {
         val uris = mutableListOf<String>()
         val projection = arrayOf(MediaStore.Images.Media._ID)
-        contentResolver.query(EXTERNAL_URI, projection, null, null, null)?.use { cursor ->
-            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-            while (cursor.moveToNext()) {
-                val id = cursor.getLong(idCol)
-                uris.add(ContentUris.withAppendedId(EXTERNAL_URI, id).toString())
+        try {
+            contentResolver.query(EXTERNAL_URI, projection, null, null, null)?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idCol)
+                    uris.add(ContentUris.withAppendedId(EXTERNAL_URI, id).toString())
+                }
             }
+        } catch (_: SecurityException) {
+            // Photo access may have been revoked between the permission check
+            // and this query. Treat it as an empty library instead of crashing.
+            return emptyList()
         }
         return uris
     }
@@ -40,32 +46,36 @@ class AndroidMediaCatalog(private val contentResolver: ContentResolver) : MediaC
             MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
             MediaStore.Images.Media._ID
         )
-        contentResolver.query(
-            EXTERNAL_URI, projection, null, null,
-            "${MediaStore.Images.Media.DATE_MODIFIED} DESC"
-        )?.use { cursor ->
-            val bucketIdCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_ID)
-            val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
-            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+        try {
+            contentResolver.query(
+                EXTERNAL_URI, projection, null, null,
+                "${MediaStore.Images.Media.DATE_MODIFIED} DESC"
+            )?.use { cursor ->
+                val bucketIdCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_ID)
+                val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
 
-            while (cursor.moveToNext()) {
-                val bucketId = cursor.getString(bucketIdCol) ?: "unknown"
-                val name = cursor.getString(nameCol) ?: "Unnamed Album"
-                val photoId = cursor.getLong(idCol)
-                val coverUri = ContentUris.withAppendedId(EXTERNAL_URI, photoId).toString()
+                while (cursor.moveToNext()) {
+                    val bucketId = cursor.getString(bucketIdCol) ?: "unknown"
+                    val name = cursor.getString(nameCol) ?: "Unnamed Album"
+                    val photoId = cursor.getLong(idCol)
+                    val coverUri = ContentUris.withAppendedId(EXTERNAL_URI, photoId).toString()
 
-                val existing = albumsMap[bucketId]
-                if (existing != null) {
-                    albumsMap[bucketId] = existing.copy(photoCount = existing.photoCount + 1)
-                } else {
-                    albumsMap[bucketId] = Album(
-                        id = bucketId,
-                        name = name,
-                        coverUri = coverUri,
-                        photoCount = 1
-                    )
+                    val existing = albumsMap[bucketId]
+                    if (existing != null) {
+                        albumsMap[bucketId] = existing.copy(photoCount = existing.photoCount + 1)
+                    } else {
+                        albumsMap[bucketId] = Album(
+                            id = bucketId,
+                            name = name,
+                            coverUri = coverUri,
+                            photoCount = 1
+                        )
+                    }
                 }
             }
+        } catch (_: SecurityException) {
+            return emptyList()
         }
         return albumsMap.values.toList()
     }
@@ -100,21 +110,25 @@ class AndroidMediaCatalog(private val contentResolver: ContentResolver) : MediaC
             MediaStore.Images.Media.DATE_TAKEN,
             MediaStore.Images.Media.DATE_ADDED
         )
-        contentResolver.query(
-            EXTERNAL_URI, projection, selection, selectionArgs,
-            "${MediaStore.Images.Media.DATE_ADDED} DESC"
-        )?.use { cursor ->
-            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-            val takenCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_TAKEN)
-            val addedCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
-            while (cursor.moveToNext()) {
-                val id = cursor.getLong(idCol)
-                val uri = ContentUris.withAppendedId(EXTERNAL_URI, id).toString()
-                // DATE_TAKEN is epoch milliseconds; DATE_ADDED is epoch seconds.
-                val takenMs = cursor.getLong(takenCol)
-                val addedMs = cursor.getLong(addedCol) * 1000L
-                images.add(MediaImage(id, uri, albumId, if (takenMs > 0L) takenMs else addedMs))
+        try {
+            contentResolver.query(
+                EXTERNAL_URI, projection, selection, selectionArgs,
+                "${MediaStore.Images.Media.DATE_ADDED} DESC"
+            )?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                val takenCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_TAKEN)
+                val addedCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idCol)
+                    val uri = ContentUris.withAppendedId(EXTERNAL_URI, id).toString()
+                    // DATE_TAKEN is epoch milliseconds; DATE_ADDED is epoch seconds.
+                    val takenMs = cursor.getLong(takenCol)
+                    val addedMs = cursor.getLong(addedCol) * 1000L
+                    images.add(MediaImage(id, uri, albumId, if (takenMs > 0L) takenMs else addedMs))
+                }
             }
+        } catch (_: SecurityException) {
+            return emptyList()
         }
         return images.sortedByDescending { it.dateTaken }
     }
@@ -144,11 +158,15 @@ class AndroidMediaCatalog(private val contentResolver: ContentResolver) : MediaC
             val projection = arrayOf(MediaStore.Images.Media._ID)
             @Suppress("DEPRECATION")
             val selection = "${MediaStore.Images.Media.DATA} = ?"
-            contentResolver.query(EXTERNAL_URI, projection, selection, arrayOf(path), null)?.use {
-                if (it.moveToFirst()) {
-                    val id = it.getLong(it.getColumnIndexOrThrow(MediaStore.Images.Media._ID))
-                    return ContentUris.withAppendedId(EXTERNAL_URI, id).toString()
+            try {
+                contentResolver.query(EXTERNAL_URI, projection, selection, arrayOf(path), null)?.use {
+                    if (it.moveToFirst()) {
+                        val id = it.getLong(it.getColumnIndexOrThrow(MediaStore.Images.Media._ID))
+                        return ContentUris.withAppendedId(EXTERNAL_URI, id).toString()
+                    }
                 }
+            } catch (_: SecurityException) {
+                return null
             }
         }
 

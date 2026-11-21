@@ -13,5 +13,6 @@ Search your personal photo collection using natural language descriptions like "
 • Initial model download requires approximately 380 MB of storage.
 
 <b>Permissions:</b>
-• Photos / Media Storage (READ_MEDIA_IMAGES / READ_EXTERNAL_STORAGE): Required to index and display photos from your device gallery. On supported Android versions, you can choose full gallery access or select specific photos.
+• Photos / Media Storage (READ_MEDIA_IMAGES / READ_MEDIA_VISUAL_USER_SELECTED / READ_EXTERNAL_STORAGE): Required to index and display photos from your device gallery. On supported Android versions, you can choose full gallery access or select specific photos. Photo access is optional; without it the app opens but has no photos to show.
+• Notifications (POST_NOTIFICATIONS): Used to show progress while photos are indexed in the background and to let you stop indexing from the notification shade. If notifications are denied, background indexing is turned off; the rest of the app still works, and background indexing can be enabled later in Settings.
 • Internet Access (INTERNET): Used exclusively to download the quantized AI model weights and verify the manifest on initial setup. No data or photos are ever transmitted externally.

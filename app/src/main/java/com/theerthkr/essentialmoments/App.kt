@@ -47,11 +47,10 @@ class App : android.app.Application(), ImageLoaderFactory {
         // indexer regenerate embeddings on its next run.
         deleteLegacyObjectBoxStore()
 
-        // Check if indexing was disabled by user in Settings; cancel any pending worker
-        if (!IndexingScheduler.isIndexingEnabled(this)) {
-            IndexingScheduler.cancel(this)
-        }
-
+        // Reconcile persisted indexing preferences with current permissions;
+        // notification or photo access may have changed while the app was dead.
+        // Keep this after photoIndexer is initialized: reconcile may cancel a
+        // stale worker and reset the indexer state.
         mediaCatalog = AndroidMediaCatalog(contentResolver)
         vectorIndex = RoomVectorIndex(AppDatabase.get(this).imageIndexDao())
         photoIndexer = PhotoIndexer(
@@ -64,6 +63,8 @@ class App : android.app.Application(), ImageLoaderFactory {
                 )
             }
         )
+
+        IndexingScheduler.reconcile(this)
     }
 
     /**

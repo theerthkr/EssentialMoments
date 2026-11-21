@@ -1,10 +1,13 @@
 package com.theerthkr.essentialmoments
 
+import android.Manifest
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -30,7 +33,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PauseCircle
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Storage
@@ -48,11 +54,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -60,6 +69,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -67,12 +77,19 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.theerthkr.essentialmoments.indexing.IndexingScheduler
 import com.theerthkr.essentialmoments.indexing.IndexingState
+import com.theerthkr.essentialmoments.permissions.AppPermissions
+import com.theerthkr.essentialmoments.permissions.MediaAccess
 import com.theerthkr.essentialmoments.ui.theme.EssentialMomentsTheme
 import com.theerthkr.essentialmoments.ui.theme.LogoRed
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -100,8 +117,64 @@ fun SettingsScreen(onBack: () -> Unit) {
     var isIndexingEnabled by remember {
         mutableStateOf(IndexingScheduler.isIndexingEnabled(context))
     }
+    var mediaAccess by remember { mutableStateOf(AppPermissions.mediaAccess(context)) }
+    var notificationsAllowed by remember {
+        mutableStateOf(AppPermissions.notificationAccess(context))
+    }
+    var backgroundIndexingEnabled by remember {
+        mutableStateOf(IndexingScheduler.isBackgroundIndexingEnabled(context))
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    val mediaPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        mediaAccess = AppPermissions.mediaAccess(context)
+        if (mediaAccess.canReadPhotos) {
+            IndexingScheduler.reconcile(context)
+        }
+    }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        notificationsAllowed = AppPermissions.notificationAccess(context)
+        if (notificationsAllowed) {
+            backgroundIndexingEnabled = true
+            IndexingScheduler.setBackgroundIndexingEnabled(context, true)
+        } else {
+            backgroundIndexingEnabled = false
+            IndexingScheduler.setBackgroundIndexingEnabled(context, false)
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                // Permissions can change in app info without recreating this screen.
+                isIndexingEnabled = IndexingScheduler.isIndexingEnabled(context)
+                mediaAccess = AppPermissions.mediaAccess(context)
+                notificationsAllowed = AppPermissions.notificationAccess(context)
+                backgroundIndexingEnabled =
+                    IndexingScheduler.isBackgroundIndexingEnabled(context)
+                IndexingScheduler.reconcile(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     val indexerState by app.photoIndexer.state.collectAsStateWithLifecycle()
     val modelStatus by app.modelManager.state.collectAsStateWithLifecycle()
+    // installedBytes() walks the model directory. Keep that file I/O off the
+    // composition (main) thread and recompute only when availability changes.
+    val installedBytes by produceState<Long?>(
+        initialValue = null,
+        modelStatus.visionReady,
+        modelStatus.fullyReady
+    ) {
+        value = withContext(Dispatchers.IO) { app.modelManager.installedBytes() }
+    }
     var indexedCount by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
 
@@ -148,6 +221,120 @@ fun SettingsScreen(onBack: () -> Unit) {
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 8.dp)
         ) {
+            // SECTION: Permissions
+            Text(
+                text = "PERMISSIONS",
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                ),
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+            )
+
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                        RoundedCornerShape(20.dp)
+                    )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    PermissionRow(
+                        icon = Icons.Default.PhotoLibrary,
+                        title = "Photo access",
+                        subtitle = when (mediaAccess) {
+                            MediaAccess.FULL -> "All photos"
+                            MediaAccess.PARTIAL -> "Selected photos only"
+                            MediaAccess.NONE -> "Not allowed"
+                        },
+                        actionText = when (mediaAccess) {
+                            MediaAccess.FULL -> "Settings"
+                            MediaAccess.PARTIAL -> "Manage"
+                            MediaAccess.NONE -> "Allow"
+                        },
+                        onAction = {
+                            when (mediaAccess) {
+                                MediaAccess.FULL -> AppPermissions.openAppSettings(context)
+                                else -> mediaPermissionLauncher.launch(
+                                    AppPermissions.mediaPermissions()
+                                )
+                            }
+                        }
+                    )
+
+                    if (mediaAccess == MediaAccess.NONE) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(onClick = { AppPermissions.openAppSettings(context) }) {
+                                Text("Open app settings")
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 12.dp),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+                    )
+
+                    PermissionRow(
+                        icon = if (notificationsAllowed) {
+                            Icons.Default.Notifications
+                        } else {
+                            Icons.Default.NotificationsOff
+                        },
+                        title = "Notifications",
+                        subtitle = if (notificationsAllowed) {
+                            "Allowed"
+                        } else {
+                            "Off — background indexing is disabled"
+                        },
+                        actionText = if (
+                            AppPermissions.canRequestNotificationPermission() &&
+                            !AppPermissions.hasNotificationPermission(context)
+                        ) {
+                            "Allow"
+                        } else {
+                            "Settings"
+                        },
+                        onAction = {
+                            if (AppPermissions.canRequestNotificationPermission() &&
+                                !AppPermissions.hasNotificationPermission(context)
+                            ) {
+                                notificationPermissionLauncher.launch(
+                                    Manifest.permission.POST_NOTIFICATIONS
+                                )
+                            } else {
+                                AppPermissions.openNotificationSettings(context)
+                            }
+                        }
+                    )
+
+                    if (!notificationsAllowed) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(
+                                onClick = { AppPermissions.openNotificationSettings(context) }
+                            ) {
+                                Text("Open notification settings")
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             // SECTION: Indexing & AI
             Text(
                 text = "INDEXING & SEARCH",
@@ -203,6 +390,86 @@ fun SettingsScreen(onBack: () -> Unit) {
                                 IndexingScheduler.setIndexingEnabled(context, checked)
                                 scope.launch {
                                     indexedCount = app.vectorIndex.indexedCount()
+                                }
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = LogoRed,
+                                uncheckedThumbColor = Color.LightGray,
+                                uncheckedTrackColor = MaterialTheme.colorScheme.surface
+                            )
+                        )
+                    }
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 16.dp),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+                    )
+
+                    // Background indexing needs a visible notification so the
+                    // user can see progress and stop the work.
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                            Text(
+                                text = "Background indexing",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.SemiBold
+                                ),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = if (notificationsAllowed) {
+                                    "Continue indexing while the app is closed. Requires the " +
+                                        "indexing notification."
+                                } else {
+                                    "Off until notifications are allowed. New photos are only " +
+                                        "indexed when you ask."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Switch(
+                            checked = backgroundIndexingEnabled && notificationsAllowed,
+                            enabled = isIndexingEnabled,
+                            onCheckedChange = { checked ->
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                if (checked) {
+                                    when {
+                                        !AppPermissions.notificationsEnabled(context) -> {
+                                            backgroundIndexingEnabled = true
+                                            IndexingScheduler.setBackgroundIndexingEnabled(
+                                                context,
+                                                true
+                                            )
+                                            if (AppPermissions.canRequestNotificationPermission() &&
+                                                !AppPermissions.hasNotificationPermission(context)
+                                            ) {
+                                                notificationPermissionLauncher.launch(
+                                                    Manifest.permission.POST_NOTIFICATIONS
+                                                )
+                                            } else {
+                                                AppPermissions.openNotificationSettings(context)
+                                            }
+                                        }
+
+                                        else -> {
+                                            backgroundIndexingEnabled = true
+                                            IndexingScheduler.setBackgroundIndexingEnabled(
+                                                context,
+                                                true
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    backgroundIndexingEnabled = false
+                                    IndexingScheduler.setBackgroundIndexingEnabled(context, false)
                                 }
                             },
                             colors = SwitchDefaults.colors(
@@ -339,7 +606,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                                     OutlinedButton(
                                         onClick = {
                                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            IndexingScheduler.scheduleIndexAll(context)
+                                            IndexingScheduler.scheduleIndexNow(context)
                                         },
                                         shape = RoundedCornerShape(12.dp),
                                         modifier = Modifier.fillMaxWidth()
@@ -376,7 +643,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                                     OutlinedButton(
                                         onClick = {
                                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            IndexingScheduler.scheduleIndexAll(context)
+                                            IndexingScheduler.scheduleIndexNow(context)
                                         },
                                         shape = RoundedCornerShape(12.dp),
                                         modifier = Modifier.fillMaxWidth()
@@ -403,7 +670,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                                     OutlinedButton(
                                         onClick = {
                                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            IndexingScheduler.scheduleIndexAll(context)
+                                            IndexingScheduler.scheduleIndexNow(context)
                                         },
                                         shape = RoundedCornerShape(12.dp),
                                         modifier = Modifier.fillMaxWidth()
@@ -542,11 +809,11 @@ fun SettingsScreen(onBack: () -> Unit) {
                         )
                     }
 
-                    if (modelStatus.fullyReady || modelStatus.visionReady) {
+                    val usageBytes = installedBytes
+                    if (usageBytes != null && (modelStatus.fullyReady || modelStatus.visionReady)) {
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = "Using about " +
-                                "${app.modelManager.installedBytes() / (1024 * 1024)} MB on this device",
+                            text = "Using about ${usageBytes / (1024 * 1024)} MB on this device",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -726,6 +993,45 @@ fun SettingsScreen(onBack: () -> Unit) {
             }
 
             Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+}
+
+@Composable
+private fun PermissionRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    actionText: String,
+    onAction: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.SemiBold
+                ),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        TextButton(onClick = onAction) {
+            Text(actionText)
         }
     }
 }

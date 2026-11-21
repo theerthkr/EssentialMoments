@@ -1,14 +1,15 @@
 package com.theerthkr.essentialmoments
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -126,10 +127,14 @@ private fun List<MediaImage>.groupByDay(): List<PhotoDaySection> {
 @Composable
 private fun DayHeader(day: LocalDate) {
     val today = LocalDate.now()
+    val locale = Locale.getDefault()
+    // DateTimeFormatter is relatively expensive to build; reuse it across
+    // recompositions instead of allocating one per header.
+    val formatter = remember(locale) { DateTimeFormatter.ofPattern("d MMMM yyyy", locale) }
     val label = when (day) {
         today -> "Today"
         today.minusDays(1) -> "Yesterday"
-        else -> day.format(DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.getDefault()))
+        else -> formatter.format(day)
     }
     Text(
         text = label,
@@ -142,8 +147,12 @@ private fun DayHeader(day: LocalDate) {
 }
 
 @Composable
-fun AlbumCard(album: Album, coverSizePx: Int, onClick: (Album) -> Unit) {
-    val context = LocalContext.current
+fun AlbumCard(
+    album: Album,
+    coverSizePx: Int,
+    context: Context,
+    onClick: (Album) -> Unit
+) {
     val coverRequest = remember(context, album.coverUri, coverSizePx) {
         mediaThumbnailRequest(context, album.coverUri, coverSizePx)
     }
@@ -184,14 +193,21 @@ fun AlbumGrid(
     onAlbumClick: (Album) -> Unit
 ) {
     val coverSizePx = rememberThumbnailSizePx(3)
+    // Resolved once here instead of per lazy item.
+    val context = LocalContext.current
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
         contentPadding = PaddingValues(8.dp)
     ) {
-        items(items = albums, key = { it.id }) { album ->
+        items(
+            items = albums,
+            key = { it.id },
+            contentType = { "album" }
+        ) { album ->
             AlbumCard(
                 album = album,
                 coverSizePx = coverSizePx,
+                context = context,
                 onClick = { onAlbumClick(album) }
             )
         }
