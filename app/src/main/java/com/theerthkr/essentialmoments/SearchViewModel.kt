@@ -12,14 +12,14 @@ import com.theerthkr.essentialmoments.ml.EmbeddingModelFactory
 import com.theerthkr.essentialmoments.ml.InferenceArbiter
 import com.theerthkr.essentialmoments.permissions.AppPermissions
 import com.theerthkr.essentialmoments.permissions.MediaAccess
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-data class SearchResult(val uri: String, val score: Float)
 
 /**
  * ViewModel for photo search.
@@ -40,11 +40,12 @@ class SearchViewModel(private val appContext: Context) : ViewModel() {
     /** Single source of truth for indexing progress across the app. */
     val indexingState: StateFlow<IndexingState> = photoIndexer.state
 
-    private val _searchResults = MutableStateFlow<List<SearchResult>>(emptyList())
-    val searchResults: StateFlow<List<SearchResult>> = _searchResults.asStateFlow()
+    private val _searchState = MutableStateFlow<SearchState>(SearchState.Idle)
 
-    private val _isSearching = MutableStateFlow(false)
-    val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
+    /** Outcome of the last submitted search; typing alone never changes it. */
+    val searchState: StateFlow<SearchState> = _searchState.asStateFlow()
+
+    private var searchJob: Job? = null
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
@@ -54,10 +55,13 @@ class SearchViewModel(private val appContext: Context) : ViewModel() {
         IndexingScheduler.scheduleIndexUris(appContext, uris.map { it.toString() })
     }
 
+    /** Updates the draft query. Does not search; clearing the text cancels any running search. */
     fun onQueryChanged(text: String) {
         _query.value = text
         if (text.isBlank()) {
-            _searchResults.value = emptyList()
+            searchJob?.cancel()
+            searchJob = null
+            _searchState.value = SearchState.Idle
         }
     }
 
@@ -68,14 +72,18 @@ class SearchViewModel(private val appContext: Context) : ViewModel() {
      */
     fun refreshVisibleResults() {
         viewModelScope.launch(Dispatchers.Default) {
+            val current = _searchState.value as? SearchState.Results ?: return@launch
             when (AppPermissions.mediaAccess(appContext)) {
-                MediaAccess.NONE -> _searchResults.value = emptyList()
+                MediaAccess.NONE -> _searchState.value = SearchState.Idle
                 MediaAccess.PARTIAL -> {
                     val accessibleUris = withContext(Dispatchers.IO) {
                         mediaCatalog.allPhotoUris().toHashSet()
                     }
-                    _searchResults.value = _searchResults.value.filter {
-                        it.uri in accessibleUris
+                    val visible = current.results.filter { it.uri in accessibleUris }
+                    _searchState.value = if (visible.isEmpty()) {
+                        SearchState.NoResults(current.query)
+                    } else {
+                        current.copy(results = visible)
                     }
                 }
                 MediaAccess.FULL -> Unit
@@ -84,53 +92,73 @@ class SearchViewModel(private val appContext: Context) : ViewModel() {
     }
 
     /**
-     * Executes semantic photo search.
+     * Executes semantic photo search for the current draft query.
      *
      * Uses [InferenceArbiter] to run the text embedder at high priority, cooperatively
      * preempting background photo embedding without canceling WorkManager jobs.
      * Uses exact cosine similarity vector scan via [VectorIndex.queryAll].
+     *
+     * A new submission cancels the previous one. State is published on the main thread
+     * after `withContext` returns, which throws if this search was cancelled meanwhile,
+     * so a superseded search can never overwrite a newer one.
      */
-    fun search(query: String) {
-        if (query.isBlank()) return
-        viewModelScope.launch(Dispatchers.Default) {
-            _isSearching.value = true
-            try {
-                val access = AppPermissions.mediaAccess(appContext)
-                if (!access.canReadPhotos) {
-                    _searchResults.value = emptyList()
-                    return@launch
-                }
+    fun submitSearch() {
+        val query = _query.value.trim()
+        if (query.isEmpty()) return
+        // Embedding is blocking and can't be interrupted, so don't stack duplicate work.
+        if (_searchState.value == SearchState.Searching(query)) return
 
-                // High-priority text embedding: yields background indexing in-process
-                val (textModelId, queryEmbedding) = InferenceArbiter.DEFAULT.runHighPriority {
-                    EmbeddingModelFactory.createTextEmbedder(appContext).use { textEmbedder ->
-                        textEmbedder.modelId to textEmbedder.getEmbedding(query)
-                    }
-                }
+        // Without photo access there is nothing to search; clear any stale results.
+        // The content area shows the photo-access hint instead of a result state.
+        if (!AppPermissions.mediaAccess(appContext).canReadPhotos) {
+            searchJob?.cancel()
+            searchJob = null
+            _searchState.value = SearchState.Idle
+            return
+        }
 
-                // Only compare against image embeddings produced by the same modelId,
-                // so a text query from model A is never scored against image embeddings
-                // from model B.
-                var scoredResults = vectorIndex.queryAll(queryEmbedding, textModelId)
-
-                // Under partial access the user's selection can change while the
-                // app is running. Never surface a photo that is no longer readable.
-                if (access == MediaAccess.PARTIAL) {
-                    val accessibleUris = withContext(Dispatchers.IO) {
-                        mediaCatalog.allPhotoUris().toHashSet()
-                    }
-                    scoredResults = scoredResults.filter { it.uri in accessibleUris }
-                }
-
-                _searchResults.value = scoredResults.map {
-                    SearchResult(uri = it.uri, score = it.score)
-                }
+        searchJob?.cancel()
+        _searchState.value = SearchState.Searching(query)
+        searchJob = viewModelScope.launch {
+            _searchState.value = try {
+                val results = withContext(Dispatchers.Default) { runSearch(query) }
+                if (results.isEmpty()) SearchState.NoResults(query)
+                else SearchState.Results(query, results)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                Log.e("SearchViewModel", "Search error for query: $query", e)
-            } finally {
-                _isSearching.value = false
+                Log.e("SearchViewModel", "Search failed", e)
+                SearchState.Error(query)
             }
         }
+    }
+
+    private suspend fun runSearch(query: String): List<SearchResult> {
+        val access = AppPermissions.mediaAccess(appContext)
+        if (!access.canReadPhotos) return emptyList()
+
+        // High-priority text embedding: yields background indexing in-process
+        val (textModelId, queryEmbedding) = InferenceArbiter.DEFAULT.runHighPriority {
+            EmbeddingModelFactory.createTextEmbedder(appContext).use { textEmbedder ->
+                textEmbedder.modelId to textEmbedder.getEmbedding(query)
+            }
+        }
+
+        // Only compare against image embeddings produced by the same modelId,
+        // so a text query from model A is never scored against image embeddings
+        // from model B.
+        var scoredResults = vectorIndex.queryAll(queryEmbedding, textModelId)
+
+        // Under partial access the user's selection can change while the
+        // app is running. Never surface a photo that is no longer readable.
+        if (access == MediaAccess.PARTIAL) {
+            val accessibleUris = withContext(Dispatchers.IO) {
+                mediaCatalog.allPhotoUris().toHashSet()
+            }
+            scoredResults = scoredResults.filter { it.uri in accessibleUris }
+        }
+
+        return scoredResults.map { SearchResult(uri = it.uri, score = it.score) }
     }
 
     class Factory(private val context: Context) : ViewModelProvider.Factory {
