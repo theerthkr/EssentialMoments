@@ -9,12 +9,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -96,7 +100,11 @@ fun ModelDownloadScreen(
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+        ) {
             if (onBack != null) {
                 Row(
                     modifier = Modifier
@@ -362,7 +370,7 @@ fun ModelDownloadScreen(
                                 onClick = { app.modelManager.startDownload() },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(52.dp),
+                                    .heightIn(min = 52.dp),
                                 shape = RoundedCornerShape(16.dp)
                             ) {
                                 Text("Download update (v${status.availableVersion})")
@@ -373,7 +381,7 @@ fun ModelDownloadScreen(
                             onClick = { onContinue?.invoke() },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(54.dp),
+                                .heightIn(min = 54.dp),
                             shape = RoundedCornerShape(16.dp)
                         ) {
                             Text(
@@ -389,7 +397,7 @@ fun ModelDownloadScreen(
                             onClick = { app.modelManager.pauseDownload() },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(52.dp),
+                                .heightIn(min = 52.dp),
                             shape = RoundedCornerShape(16.dp)
                         ) {
                             Icon(
@@ -421,7 +429,7 @@ fun ModelDownloadScreen(
                             enabled = enabled,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(54.dp),
+                                .heightIn(min = 54.dp),
                             shape = RoundedCornerShape(16.dp)
                         ) {
                             Icon(
@@ -684,7 +692,7 @@ fun SearchModelGate(onManage: () -> Unit) {
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp),
+                .heightIn(min = 52.dp),
             shape = RoundedCornerShape(16.dp)
         ) {
             Text(
