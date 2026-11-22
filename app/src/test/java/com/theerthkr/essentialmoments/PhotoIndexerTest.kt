@@ -7,6 +7,8 @@ import com.theerthkr.essentialmoments.indexing.IndexingState
 import com.theerthkr.essentialmoments.indexing.PhotoIndexer
 import com.theerthkr.essentialmoments.media.MediaCatalog
 import com.theerthkr.essentialmoments.ml.ImageEmbedder
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -21,6 +23,7 @@ class PhotoIndexerTest {
         override fun albums(): List<Album> = emptyList()
         override fun albumPhotos(albumId: String): List<MediaImage> = emptyList()
         override fun allPhotos(): List<MediaImage> = emptyList()
+        override fun observeChanges(): Flow<Unit> = emptyFlow()
         override fun normalizeUri(uri: String): String = uri
     }
 
