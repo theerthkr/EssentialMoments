@@ -7,6 +7,53 @@ import androidx.exifinterface.media.ExifInterface
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
+import kotlin.math.roundToLong
+
+/**
+ * Formats an exposure duration the way camera apps do:
+ * fractions for sub-second exposures ("1/125 s") and plain seconds for
+ * one second or longer ("2 s").
+ *
+ * The previous reciprocal formatting truncated the denominator, so a 2-second
+ * exposure produced an invalid "1/0 s".
+ */
+internal fun formatExposureTime(seconds: Double): String? {
+    if (!seconds.isFinite() || seconds <= 0.0) return null
+    if (seconds >= 1.0) {
+        val whole = seconds.roundToLong()
+        val value = if (seconds == whole.toDouble()) {
+            whole.toString()
+        } else {
+            String.format(Locale.getDefault(), "%.2f", seconds).trimEnd('0').trimEnd('.')
+        }
+        return "$value s"
+    }
+    val denominator = (1.0 / seconds).roundToInt().coerceAtLeast(1)
+    return "1/$denominator s"
+}
+
+/**
+ * Parses EXIF exposure time values, which can be decimal seconds ("2") or a
+ * rational ("1/125"). Returns null when the value is not a positive duration.
+ */
+internal fun parseExposureSeconds(raw: String): Double? {
+    val value = raw.toDoubleOrNull() ?: run {
+        val parts = raw.split('/')
+        if (parts.size == 2) {
+            val numerator = parts[0].toDoubleOrNull()
+            val denominator = parts[1].toDoubleOrNull()
+            if (numerator != null && denominator != null && denominator != 0.0) {
+                numerator / denominator
+            } else {
+                null
+            }
+        } else {
+            null
+        }
+    } ?: return null
+    return value.takeIf { it.isFinite() && it > 0.0 }
+}
 
 data class ImageInfo(
     val name: String,
@@ -94,13 +141,10 @@ fun getImageInfo(context: Context, uriString: String): ImageInfo {
             iso = exif.getAttribute(ExifInterface.TAG_PHOTOGRAPHIC_SENSITIVITY)
             val expTime = exif.getAttribute(ExifInterface.TAG_EXPOSURE_TIME)
             if (expTime != null) {
-                val expDouble = expTime.toDoubleOrNull()
-                if (expDouble != null && expDouble > 0) {
-                    val denom = (1 / expDouble).toInt()
-                    exposureTime = "1/$denom s"
-                } else {
-                    exposureTime = "${expTime}s"
-                }
+                exposureTime = expTime
+                    .let(::parseExposureSeconds)
+                    ?.let(::formatExposureTime)
+                    ?: "${expTime}s"
             }
             val fNumber = exif.getAttribute(ExifInterface.TAG_F_NUMBER)
             if (fNumber != null) {

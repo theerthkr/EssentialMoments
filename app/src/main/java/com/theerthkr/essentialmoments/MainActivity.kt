@@ -384,13 +384,21 @@ class MainActivity : ComponentActivity() {
                         TabButton(
                             text = "Photos",
                             isSelected = selectedTab == "Photos",
-                            onClick = { selectedTab = "Photos" },
+                            onClick = {
+                                selectedTab = "Photos"
+                                // Pick up anything added while the Albums tab
+                                // (or another app) was in front.
+                                viewModel.fetchAllImages()
+                            },
                             accentColor = MaterialTheme.colorScheme.primary
                         )
                         TabButton(
                             text = "Albums",
                             isSelected = selectedTab == "Albums",
-                            onClick = { selectedTab = "Albums" },
+                            onClick = {
+                                selectedTab = "Albums"
+                                viewModel.fetchAlbums()
+                            },
                             accentColor = MaterialTheme.colorScheme.primary
                         )
                     }

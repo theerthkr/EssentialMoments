@@ -2,10 +2,17 @@ package com.theerthkr.essentialmoments.media
 
 import android.content.ContentResolver
 import android.content.ContentUris
+import android.database.ContentObserver
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import com.theerthkr.essentialmoments.Album
 import com.theerthkr.essentialmoments.MediaImage
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.conflate
 
 /**
  * Production adapter for [MediaCatalog] backed by Android MediaStore.
@@ -89,6 +96,18 @@ class AndroidMediaCatalog(private val contentResolver: ContentResolver) : MediaC
 
     override fun allPhotos(): List<MediaImage> =
         queryImages(selection = null, selectionArgs = null, albumId = "AllPhotos")
+
+    override fun observeChanges(): Flow<Unit> = callbackFlow {
+        // notifyForDescendants=true also delivers item-level changes
+        // (content://.../images/media/<id>), which is what inserts and edits emit.
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean, uri: Uri?) {
+                trySend(Unit)
+            }
+        }
+        contentResolver.registerContentObserver(EXTERNAL_URI, true, observer)
+        awaitClose { contentResolver.unregisterContentObserver(observer) }
+    }.conflate()
 
     /**
      * Reads photo metadata and orders rows by the date the gallery should display.

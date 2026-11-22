@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -92,10 +91,6 @@ fun ImagePagerScreen(uri: String, name: String) {
                 }
             }) {
                 Icon(Icons.Default.Info, "Info", tint = Color.White)
-            }
-
-            IconButton(onClick = { /* Nothing yet */ }) {
-                Icon(Icons.Default.MoreVert, "Options", tint = Color.White)
             }
         }
     }
