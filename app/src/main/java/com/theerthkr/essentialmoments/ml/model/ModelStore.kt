@@ -69,6 +69,9 @@ class ModelStore(private val context: Context) {
     fun stagingFile(spec: ModelFileSpec, version: Int): File =
         File(File(root, "staging/$version"), "${spec.path}.part")
 
+    /** Staging area for imported archives, kept apart from download staging. */
+    fun importStagingDir(version: Int): File = File(root, "import/$version")
+
     fun installDir(manifest: ModelManifest): File =
         File(root, "${safeModelId(manifest.modelId)}/${manifest.version}")
 
@@ -87,6 +90,22 @@ class ModelStore(private val context: Context) {
         editor.putLong(roleKey(manifest.version, spec.role), spec.sizeBytes)
         editor.apply()
         Log.d(TAG, "Marked ${spec.role.wireName} ready for model v${manifest.version}")
+    }
+
+    /**
+     * Records a complete, already-verified archive import in one preferences
+     * commit. Unlike [markFileReady], the manifest is always written because an
+     * imported archive may replace an installed model without changing version.
+     */
+    fun markImportedFilesReady(manifest: ModelManifest, specs: Collection<ModelFileSpec>) {
+        val editor = prefs.edit()
+            .putString(KEY_INSTALLED_MANIFEST, manifest.toJson())
+            .putInt(KEY_INSTALLED_VERSION, manifest.version)
+        specs.forEach { spec ->
+            editor.putLong(roleKey(manifest.version, spec.role), spec.sizeBytes)
+        }
+        editor.apply()
+        Log.d(TAG, "Marked ${specs.size} imported files ready for model v${manifest.version}")
     }
 
     /** Removes every downloaded/bundled copy and all install bookkeeping. */
