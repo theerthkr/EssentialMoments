@@ -1,12 +1,14 @@
 package com.theerthkr.essentialmoments.permissions
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 
@@ -98,6 +100,30 @@ object AppPermissions {
 
     fun notificationAccess(context: Context): Boolean =
         hasNotificationPermission(context) && notificationsEnabled(context)
+
+    /**
+     * True when Android will still show a photo-permission dialog after a
+     * denial. Once this is false and access is still [MediaAccess.NONE], the
+     * system has stopped showing the dialog, so requesting again would silently
+     * do nothing and the user has to enable access from app settings.
+     */
+    fun canRequestMediaPermission(activity: Activity): Boolean =
+        mediaPermissions().any {
+            ActivityCompat.shouldShowRequestPermissionRationale(activity, it)
+        }
+
+    /**
+     * Called after a media-permission request finishes without a grant.
+     *
+     * If Android has permanently blocked the request, open app settings so the
+     * "Choose Photos" button still leads somewhere instead of appearing dead.
+     * Returns true when settings were opened.
+     */
+    fun openSettingsIfMediaRequestBlocked(activity: Activity): Boolean {
+        if (canRequestMediaPermission(activity)) return false
+        openAppSettings(activity)
+        return true
+    }
 
     fun openAppSettings(context: Context) {
         context.startActivity(

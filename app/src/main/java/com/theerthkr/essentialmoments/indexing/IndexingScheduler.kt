@@ -157,6 +157,23 @@ object IndexingScheduler {
     }
 
     /**
+     * Runs a reconcile after any already-running index pass.
+     *
+     * Used for MediaStore change notifications: `KEEP` would drop the request
+     * while a scan is running, leaving the change unseen until another trigger.
+     * `APPEND_OR_REPLACE` instead chains one follow-up pass.
+     */
+    fun scheduleReconcile(context: Context) {
+        if (!isIndexingEnabled(context)) return
+        if (!AppPermissions.mediaAccess(context).canReadPhotos) return
+        enqueueIndexAll(
+            context,
+            background = false,
+            policy = ExistingWorkPolicy.APPEND_OR_REPLACE
+        )
+    }
+
+    /**
      * Backward-compatible alias. New code should choose explicitly between
      * [scheduleBackgroundIndexing] and [scheduleIndexNow].
      */
@@ -164,7 +181,11 @@ object IndexingScheduler {
         scheduleBackgroundIndexing(context)
     }
 
-    private fun enqueueIndexAll(context: Context, background: Boolean) {
+    private fun enqueueIndexAll(
+        context: Context,
+        background: Boolean,
+        policy: ExistingWorkPolicy = ExistingWorkPolicy.KEEP
+    ) {
         if (!EmbeddingModelFactory.isVisionReady(context)) {
             // Models are not downloaded yet; do not enqueue work that would
             // immediately fail. The UI shows a setup prompt instead.
@@ -179,7 +200,7 @@ object IndexingScheduler {
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             UNIQUE_WORK_NAME,
-            ExistingWorkPolicy.KEEP,
+            policy,
             request
         )
     }

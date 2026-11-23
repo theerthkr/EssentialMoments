@@ -3,6 +3,7 @@ package com.theerthkr.essentialmoments
 import android.Manifest
 import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -42,6 +43,7 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -150,6 +152,22 @@ fun SettingsScreen(onBack: () -> Unit) {
         }
     }
 
+    val exportModelsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri != null) {
+            app.modelManager.exportModels(uri)
+        }
+    }
+
+    val importModelsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            app.modelManager.importModels(uri)
+        }
+    }
+
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -168,6 +186,7 @@ fun SettingsScreen(onBack: () -> Unit) {
 
     val indexerState by app.photoIndexer.state.collectAsStateWithLifecycle()
     val modelStatus by app.modelManager.state.collectAsStateWithLifecycle()
+    val archiveStatus by app.modelManager.archive.collectAsStateWithLifecycle()
     // installedBytes() walks the model directory. Keep that file I/O off the
     // composition (main) thread and recompute only when availability changes.
     val installedBytes by produceState<Long?>(
@@ -183,6 +202,18 @@ fun SettingsScreen(onBack: () -> Unit) {
     // Refresh indexed photo count whenever indexing updates or finishes
     LaunchedEffect(indexerState) {
         indexedCount = app.vectorIndex.indexedCount()
+    }
+
+    LaunchedEffect(archiveStatus) {
+        val status = archiveStatus ?: return@LaunchedEffect
+        if (status.finished && status.error == null) {
+            Toast.makeText(
+                context,
+                if (status.exporting) "Models exported" else "Models imported",
+                Toast.LENGTH_SHORT
+            ).show()
+            app.modelManager.dismissArchiveStatus()
+        }
     }
 
     Column(
@@ -533,7 +564,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                                         }
 
                                         Text(
-                                            text = "${state.current} / ${state.total}",
+                                            text = "${state.processed} / ${state.pending}",
                                             style = MaterialTheme.typography.labelMedium,
                                             color = MaterialTheme.colorScheme.primary
                                         )
@@ -541,8 +572,8 @@ fun SettingsScreen(onBack: () -> Unit) {
 
                                     Spacer(modifier = Modifier.height(10.dp))
 
-                                    val progress = if (state.total > 0) {
-                                        state.current.toFloat() / state.total
+                                    val progress = if (state.pending > 0) {
+                                        state.processed.toFloat() / state.pending
                                     } else {
                                         0f
                                     }
@@ -593,10 +624,14 @@ fun SettingsScreen(onBack: () -> Unit) {
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
-                                            text = if (state.count > 0) {
-                                                "Indexed ${state.count} new photo(s)"
-                                            } else {
-                                                "Photos up to date"
+                                            text = when {
+                                                state.indexed > 0 && state.skipped > 0 ->
+                                                    "Indexed ${state.indexed} new photo(s); ${state.skipped} could not be read"
+                                                state.indexed > 0 ->
+                                                    "Indexed ${state.indexed} new photo(s)"
+                                                state.skipped > 0 ->
+                                                    "No new photos; ${state.skipped} could not be read"
+                                                else -> "Photos up to date"
                                             },
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.onSurface
@@ -820,6 +855,86 @@ fun SettingsScreen(onBack: () -> Unit) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 12.dp),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+                    )
+
+                    archiveStatus?.let { status ->
+                        Text(
+                            text = if (status.exporting) {
+                                "Exporting models…"
+                            } else {
+                                "Importing models…"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        LinearProgressIndicator(
+                            progress = { status.fraction },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            color = LogoRed,
+                            trackColor = MaterialTheme.colorScheme.surface
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = if (status.totalBytes > 0L) {
+                                "${status.bytes / (1024 * 1024)} of " +
+                                    "${status.totalBytes / (1024 * 1024)} MB"
+                            } else {
+                                "Reading archive…"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = {
+                                exportModelsLauncher.launch(
+                                    "EssentialMoments-models-v${modelStatus.installedVersion}.zip"
+                                )
+                            },
+                            enabled = modelStatus.fullyReady &&
+                                modelStatus.installedManifest != null &&
+                                archiveStatus == null
+                        ) {
+                            Text("Export models")
+                        }
+                        TextButton(
+                            onClick = {
+                                importModelsLauncher.launch(
+                                    arrayOf(
+                                        "application/zip",
+                                        "application/x-zip-compressed",
+                                        "application/octet-stream"
+                                    )
+                                )
+                            },
+                            enabled = archiveStatus == null &&
+                                !modelStatus.queued &&
+                                modelStatus.download == null
+                        ) {
+                            Text("Import models")
+                        }
+                    }
+                    Text(
+                        text = "Save a backup zip to re-import after reinstalling the app. " +
+                            "Only import archives you created yourself.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 
@@ -996,6 +1111,21 @@ fun SettingsScreen(onBack: () -> Unit) {
 
             Spacer(modifier = Modifier.height(32.dp))
         }
+    }
+
+    archiveStatus?.takeIf { it.error != null }?.let { status ->
+        AlertDialog(
+            onDismissRequest = { app.modelManager.dismissArchiveStatus() },
+            title = {
+                Text(if (status.exporting) "Export failed" else "Import failed")
+            },
+            text = { Text(status.error.orEmpty()) },
+            confirmButton = {
+                TextButton(onClick = { app.modelManager.dismissArchiveStatus() }) {
+                    Text("OK")
+                }
+            }
+        )
     }
 }
 

@@ -11,7 +11,6 @@ import com.theerthkr.essentialmoments.indexing.IndexingState
 import com.theerthkr.essentialmoments.ml.EmbeddingModelFactory
 import com.theerthkr.essentialmoments.ml.InferenceArbiter
 import com.theerthkr.essentialmoments.permissions.AppPermissions
-import com.theerthkr.essentialmoments.permissions.MediaAccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -73,20 +72,18 @@ class SearchViewModel(private val appContext: Context) : ViewModel() {
     fun refreshVisibleResults() {
         viewModelScope.launch(Dispatchers.Default) {
             val current = _searchState.value as? SearchState.Results ?: return@launch
-            when (AppPermissions.mediaAccess(appContext)) {
-                MediaAccess.NONE -> _searchState.value = SearchState.Idle
-                MediaAccess.PARTIAL -> {
-                    val accessibleUris = withContext(Dispatchers.IO) {
-                        mediaCatalog.allPhotoUris().toHashSet()
-                    }
-                    val visible = current.results.filter { it.uri in accessibleUris }
-                    _searchState.value = if (visible.isEmpty()) {
-                        SearchState.NoResults(current.query)
-                    } else {
-                        current.copy(results = visible)
-                    }
-                }
-                MediaAccess.FULL -> Unit
+            if (!AppPermissions.mediaAccess(appContext).canReadPhotos) {
+                _searchState.value = SearchState.Idle
+                return@launch
+            }
+            val accessibleUris = withContext(Dispatchers.IO) {
+                mediaCatalog.existingUris(current.results.map { it.uri })
+            }
+            val visible = current.results.filter { it.uri in accessibleUris }
+            _searchState.value = if (visible.isEmpty()) {
+                SearchState.NoResults(current.query)
+            } else {
+                current.copy(results = visible)
             }
         }
     }
@@ -149,14 +146,13 @@ class SearchViewModel(private val appContext: Context) : ViewModel() {
         // from model B.
         var scoredResults = vectorIndex.queryAll(queryEmbedding, textModelId)
 
-        // Under partial access the user's selection can change while the
-        // app is running. Never surface a photo that is no longer readable.
-        if (access == MediaAccess.PARTIAL) {
-            val accessibleUris = withContext(Dispatchers.IO) {
-                mediaCatalog.allPhotoUris().toHashSet()
-            }
-            scoredResults = scoredResults.filter { it.uri in accessibleUris }
+        // Never surface a photo that MediaStore can no longer read. This covers
+        // deletions and partial-access selections; the next scan also removes
+        // the row from the database entirely.
+        val existingUris = withContext(Dispatchers.IO) {
+            mediaCatalog.existingUris(scoredResults.map { it.uri })
         }
+        scoredResults = scoredResults.filter { it.uri in existingUris }
 
         return scoredResults.map { SearchResult(uri = it.uri, score = it.score) }
     }

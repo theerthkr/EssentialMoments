@@ -14,6 +14,13 @@ import com.theerthkr.essentialmoments.ml.onnx.OnnxSiglipTextEmbedder
  */
 object EmbeddingModelFactory {
 
+    /**
+     * Identifier used to scope image embeddings. Exposed separately from
+     * [createImageEmbedder] so reconciliation can run (and prune stale rows)
+     * without loading the ONNX session.
+     */
+    val visionModelId: String = OnnxSiglipImageEmbedder.MODEL_ID
+
     fun createImageEmbedder(context: Context): ImageEmbedder {
         requireModel(context, ModelRole.VISION)
         return OnnxSiglipImageEmbedder(context)

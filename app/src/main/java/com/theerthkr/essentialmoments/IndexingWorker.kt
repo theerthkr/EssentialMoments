@@ -77,11 +77,11 @@ class IndexingWorker(appContext: Context, workerParams: WorkerParameters) :
                         is IndexingState.Indexing -> {
                             setProgress(
                                 workDataOf(
-                                    "PROGRESS" to state.current,
-                                    "TOTAL" to state.total
+                                    "PROGRESS" to state.processed,
+                                    "TOTAL" to state.pending
                                 )
                             )
-                            updateNotification(state.current, state.total)
+                            updateNotification(state.processed, state.pending)
                         }
                         else -> { /* Idle, Done, Error — handled by return value */ }
                     }

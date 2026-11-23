@@ -1,9 +1,11 @@
 package com.theerthkr.essentialmoments.data
 
+import com.theerthkr.essentialmoments.media.PhotoCandidate
+
 /**
  * Deep module interface for vector storage, deduplication, and similarity search.
  *
- * Hides the storage engine (Room), deduplication logic, and ranking math behind a
+ * Hides the storage engine (Room), reconciliation logic, and ranking math behind a
  * small interface. Callers never see [ImageIndexEntity], the DAO, or raw database
  * cursors.
  *
@@ -12,20 +14,39 @@ package com.theerthkr.essentialmoments.data
  */
 interface VectorIndex {
 
-    data class IndexEntry(val uri: String, val embedding: FloatArray, val modelId: String)
+    data class IndexEntry(
+        val uri: String,
+        val embedding: FloatArray,
+        val modelId: String,
+        val fingerprint: String
+    )
     data class ScoredResult(val uri: String, val score: Float)
 
     /**
-     * Batch-filters [uris] and returns only those not yet present in the index for [modelId].
-     * A photo indexed under one modelId is still "unindexed" under another modelId,
-     * so the same photo can be embedded by multiple models without collision.
+     * Reconciles stored rows against the current MediaStore catalog for [modelId].
+     *
+     * Rows are deleted when:
+     * - their URI is absent from [candidates] and [pruneMissing] is true (deleted
+     *   or no longer readable), or
+     * - their fingerprint differs from the candidate's (content replaced), or
+     * - they are listed in [forceUris] and still exist (caller knows they changed).
+     *
+     * Deleting before re-embedding is deliberate: if embedding later fails, the
+     * photo remains absent instead of serving an embedding of its old content.
+     *
+     * @return candidates that need embedding: new rows plus deleted/replaced ones.
      */
-    suspend fun filterUnindexed(uris: List<String>, modelId: String): List<String>
+    suspend fun reconcile(
+        candidates: List<PhotoCandidate>,
+        modelId: String,
+        pruneMissing: Boolean,
+        forceUris: Set<String> = emptySet()
+    ): List<PhotoCandidate>
 
     /**
-     * Persists a batch of [entries] (URI + embedding + modelId triples) in a
-     * single database transaction. Re-inserting an existing (modelId, uri) pair
-     * replaces the previous row.
+     * Persists a batch of [entries] (URI + embedding + modelId + fingerprint)
+     * in a single database transaction. Re-inserting an existing (modelId, uri)
+     * pair replaces the previous row.
      */
     suspend fun putBatch(entries: List<IndexEntry>)
 
@@ -39,4 +60,7 @@ interface VectorIndex {
 
     /** Number of indexed rows across all models. */
     suspend fun indexedCount(): Int
+
+    /** Removes every stored embedding for every model. */
+    suspend fun clear()
 }

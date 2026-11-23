@@ -35,4 +35,57 @@ class ImageInfoUtilsTest {
         assertNull(parseExposureSeconds("1/0"))
         assertNull(parseExposureSeconds("nope"))
     }
+
+    @Test
+    fun resolvesCaptureDateWhenPresent() {
+        val summary = resolveImageDate(
+            dateTakenMs = 1732320000000L,
+            dateModifiedMs = 1732310000000L,
+            dateAddedMs = 1732330000000L
+        )
+        assertEquals(1732320000000L, summary.primaryDateMs)
+        assertEquals("Captured", summary.dateLabel)
+        assertEquals(1732330000000L, summary.dateAddedMs)
+    }
+
+    @Test
+    fun fallsBackToModifiedDateWhenCaptureTimeAbsent() {
+        // Issue #37: An image without capture metadata has an older modified date
+        // but was added to the emulator today.
+        val modifiedMs = 1731900178000L // 18 Nov
+        val addedMs = 1732322010000L    // 23 Nov
+        val summary = resolveImageDate(
+            dateTakenMs = 0L,
+            dateModifiedMs = modifiedMs,
+            dateAddedMs = addedMs
+        )
+        assertEquals(modifiedMs, summary.primaryDateMs)
+        assertEquals("Modified", summary.dateLabel)
+        assertEquals(addedMs, summary.dateAddedMs)
+    }
+
+    @Test
+    fun fallsBackToAddedDateWhenCaptureAndModifiedAbsent() {
+        val addedMs = 1732322010000L
+        val summary = resolveImageDate(
+            dateTakenMs = 0L,
+            dateModifiedMs = 0L,
+            dateAddedMs = addedMs
+        )
+        assertEquals(addedMs, summary.primaryDateMs)
+        assertEquals("Added to library", summary.dateLabel)
+        assertNull(summary.dateAddedMs)
+    }
+
+    @Test
+    fun handlesMissingDatesGracefully() {
+        val summary = resolveImageDate(
+            dateTakenMs = 0L,
+            dateModifiedMs = 0L,
+            dateAddedMs = 0L
+        )
+        assertEquals(0L, summary.primaryDateMs)
+        assertEquals("Date", summary.dateLabel)
+        assertNull(summary.dateAddedMs)
+    }
 }

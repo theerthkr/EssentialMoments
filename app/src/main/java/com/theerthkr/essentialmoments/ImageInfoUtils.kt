@@ -67,14 +67,60 @@ data class ImageInfo(
     val iso: String?,
     val exposureTime: String?,
     val aperture: String?,
-    val path: String?
+    val path: String?,
+    val dateLabel: String = "Date",
+    val dateAdded: String? = null
 )
+
+internal data class ImageDateSummary(
+    val primaryDateMs: Long,
+    val dateLabel: String,
+    val dateAddedMs: Long?
+)
+
+/**
+ * Resolves which timestamp to display as primary and how to label it.
+ *
+ * EXIF capture time is preferred. When absent (e.g. screenshots, downloads,
+ * or imported photos without camera metadata), the file modification date is
+ * shown and explicitly labeled as "Modified", while preserving the date added
+ * to the device library so the user understands why the photo may be grouped
+ * under "Today" in the gallery while showing an older modification date.
+ */
+internal fun resolveImageDate(
+    dateTakenMs: Long,
+    dateModifiedMs: Long,
+    dateAddedMs: Long
+): ImageDateSummary = when {
+    dateTakenMs > 0L -> ImageDateSummary(
+        primaryDateMs = dateTakenMs,
+        dateLabel = "Captured",
+        dateAddedMs = if (dateAddedMs > 0L) dateAddedMs else null
+    )
+    dateModifiedMs > 0L -> ImageDateSummary(
+        primaryDateMs = dateModifiedMs,
+        dateLabel = "Modified",
+        dateAddedMs = if (dateAddedMs > 0L) dateAddedMs else null
+    )
+    dateAddedMs > 0L -> ImageDateSummary(
+        primaryDateMs = dateAddedMs,
+        dateLabel = "Added to library",
+        dateAddedMs = null
+    )
+    else -> ImageDateSummary(
+        primaryDateMs = 0L,
+        dateLabel = "Date",
+        dateAddedMs = null
+    )
+}
 
 fun getImageInfo(context: Context, uriString: String): ImageInfo {
     val uri = Uri.parse(uriString)
 
     var name = "Unknown"
-    var dateMs = 0L
+    var dateTakenMs = 0L
+    var dateModifiedMs = 0L
+    var dateAddedMs = 0L
     var sizeBytes = 0L
     var width = 0
     var height = 0
@@ -86,6 +132,7 @@ fun getImageInfo(context: Context, uriString: String): ImageInfo {
             MediaStore.MediaColumns.DISPLAY_NAME,
             MediaStore.Images.Media.DATE_TAKEN,
             MediaStore.MediaColumns.DATE_MODIFIED,
+            MediaStore.MediaColumns.DATE_ADDED,
             MediaStore.MediaColumns.SIZE,
             MediaStore.MediaColumns.WIDTH,
             MediaStore.MediaColumns.HEIGHT,
@@ -97,13 +144,19 @@ fun getImageInfo(context: Context, uriString: String): ImageInfo {
                 val nameIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
                 if (nameIdx != -1) name = cursor.getString(nameIdx) ?: "Unknown"
 
-                // Prefer the capture time recorded in EXIF; fall back to the file's
-                // modified time for images that have no capture metadata.
                 val takenIdx = cursor.getColumnIndex(MediaStore.Images.Media.DATE_TAKEN)
-                if (takenIdx != -1) dateMs = cursor.getLong(takenIdx)
-                if (dateMs <= 0L) {
-                    val modifiedIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
-                    if (modifiedIdx != -1) dateMs = cursor.getLong(modifiedIdx) * 1000L
+                if (takenIdx != -1) dateTakenMs = cursor.getLong(takenIdx)
+
+                val modifiedIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+                if (modifiedIdx != -1) {
+                    val sec = cursor.getLong(modifiedIdx)
+                    if (sec > 0L) dateModifiedMs = sec * 1000L
+                }
+
+                val addedIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_ADDED)
+                if (addedIdx != -1) {
+                    val sec = cursor.getLong(addedIdx)
+                    if (sec > 0L) dateAddedMs = sec * 1000L
                 }
 
                 val sizeIdx = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
@@ -125,6 +178,12 @@ fun getImageInfo(context: Context, uriString: String): ImageInfo {
     } else {
         path = uri.path
         name = uri.lastPathSegment ?: "Unknown"
+        try {
+            val file = uri.path?.let { java.io.File(it) }
+            if (file != null && file.exists()) {
+                dateModifiedMs = file.lastModified()
+            }
+        } catch (_: Exception) {}
     }
 
     var make: String? = null
@@ -154,12 +213,14 @@ fun getImageInfo(context: Context, uriString: String): ImageInfo {
                 width = exif.getAttributeInt(ExifInterface.TAG_IMAGE_WIDTH, 0)
                 height = exif.getAttributeInt(ExifInterface.TAG_IMAGE_LENGTH, 0)
             }
-            if (dateMs == 0L) {
-                val datetime = exif.getAttribute(ExifInterface.TAG_DATETIME)
+            if (dateTakenMs <= 0L) {
+                val datetime = exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
+                    ?: exif.getAttribute(ExifInterface.TAG_DATETIME)
+                    ?: exif.getAttribute(ExifInterface.TAG_DATETIME_DIGITIZED)
                 if (datetime != null) {
                     try {
                         val sdf = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.getDefault())
-                        dateMs = sdf.parse(datetime)?.time ?: 0L
+                        dateTakenMs = sdf.parse(datetime)?.time ?: 0L
                     } catch (e: Exception) {}
                 }
             }
@@ -168,11 +229,19 @@ fun getImageInfo(context: Context, uriString: String): ImageInfo {
         // Handle exception
     }
 
-    val dateStr = if (dateMs > 0) {
-        SimpleDateFormat("dd MMMM yyyy 'at' HH:mm", Locale.getDefault()).format(Date(dateMs))
+    val dateSummary = resolveImageDate(
+        dateTakenMs = dateTakenMs,
+        dateModifiedMs = dateModifiedMs,
+        dateAddedMs = dateAddedMs
+    )
+
+    val dateFormat = SimpleDateFormat("dd MMMM yyyy 'at' HH:mm", Locale.getDefault())
+    val dateStr = if (dateSummary.primaryDateMs > 0) {
+        dateFormat.format(Date(dateSummary.primaryDateMs))
     } else {
         "Unknown Date"
     }
+    val dateAddedStr = dateSummary.dateAddedMs?.let { dateFormat.format(Date(it)) }
 
     val mb = sizeBytes / (1024.0 * 1024.0)
     val sizeStr = if (mb > 0.1) String.format("%.1f MB", mb) else String.format("%d KB", sizeBytes / 1024)
@@ -196,6 +265,8 @@ fun getImageInfo(context: Context, uriString: String): ImageInfo {
         iso = iso,
         exposureTime = exposureTime,
         aperture = aperture,
-        path = path
+        path = path,
+        dateLabel = dateSummary.dateLabel,
+        dateAdded = dateAddedStr
     )
 }
