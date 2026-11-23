@@ -1,6 +1,7 @@
 package com.theerthkr.essentialmoments.ml.model
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
@@ -11,6 +12,7 @@ import androidx.work.WorkManager
 import androidx.work.await
 import androidx.work.workDataOf
 import com.theerthkr.essentialmoments.BuildConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -39,6 +41,20 @@ data class DownloadProgress(
     val fraction: Float
         get() = if (overallTotalBytes > 0L) {
             (overallBytes.toDouble() / overallTotalBytes.toDouble()).toFloat().coerceIn(0f, 1f)
+        } else 0f
+}
+
+/** Progress for an explicit model archive export or import. */
+data class ArchiveStatus(
+    val exporting: Boolean,
+    val bytes: Long = 0L,
+    val totalBytes: Long = 0L,
+    val finished: Boolean = false,
+    val error: String? = null
+) {
+    val fraction: Float
+        get() = if (totalBytes > 0L) {
+            (bytes.toDouble() / totalBytes.toDouble()).toFloat().coerceIn(0f, 1f)
         } else 0f
 }
 
@@ -93,6 +109,9 @@ class ModelManager(private val context: Context) {
 
     private val _state = MutableStateFlow(ModelStatus())
     val state: StateFlow<ModelStatus> = _state.asStateFlow()
+
+    private val _archive = MutableStateFlow<ArchiveStatus?>(null)
+    val archive: StateFlow<ArchiveStatus?> = _archive.asStateFlow()
 
     init {
         store.deleteLegacyStaging()
@@ -348,6 +367,98 @@ class ModelManager(private val context: Context) {
         store.deleteAll()
         prefs.edit().remove(KEY_CACHED_MANIFEST).apply()
         _state.value = ModelStatus(manifest = _state.value.manifest)
+    }
+
+    /** Exports the installed models to a user-chosen file. */
+    fun exportModels(uri: Uri) {
+        if (_archive.value?.finished == false) return
+        val manifest = store.installedManifest()
+        if (manifest == null) {
+            _archive.value = ArchiveStatus(
+                exporting = true,
+                finished = true,
+                error = "No installed models to export."
+            )
+            return
+        }
+        _archive.value = ArchiveStatus(exporting = true, totalBytes = manifest.totalBytes)
+        scope.launch {
+            try {
+                ModelArchive.export(appContext, uri, manifest) { bytes, total ->
+                    _archive.value = ArchiveStatus(
+                        exporting = true,
+                        bytes = bytes,
+                        totalBytes = total
+                    )
+                }
+                _archive.value = ArchiveStatus(
+                    exporting = true,
+                    bytes = manifest.totalBytes,
+                    totalBytes = manifest.totalBytes,
+                    finished = true
+                )
+            } catch (e: CancellationException) {
+                _archive.value = null
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Could not export models", e)
+                _archive.value = ArchiveStatus(
+                    exporting = true,
+                    finished = true,
+                    error = "Could not export models: ${e.readableMessage()}"
+                )
+            }
+        }
+    }
+
+    /** Imports a verified model archive, replacing the installed models. */
+    fun importModels(uri: Uri) {
+        if (_archive.value?.finished == false) return
+        if (_state.value.queued || _state.value.download != null) {
+            _archive.value = ArchiveStatus(
+                exporting = false,
+                finished = true,
+                error = "Stop the model download before importing."
+            )
+            return
+        }
+        _archive.value = ArchiveStatus(exporting = false)
+        scope.launch {
+            try {
+                val manifest = ModelArchive.import(appContext, uri) { bytes, total ->
+                    _archive.value = ArchiveStatus(
+                        exporting = false,
+                        bytes = bytes,
+                        totalBytes = total
+                    )
+                }
+                store.pruneOldVersions(manifest.modelId, manifest.version)
+                prefs.edit().putString(KEY_CACHED_MANIFEST, manifest.toJson()).apply()
+                _state.value = buildStatus(manifest = manifest)
+                com.theerthkr.essentialmoments.indexing.IndexingScheduler
+                    .scheduleIndexAll(appContext)
+                _archive.value = ArchiveStatus(
+                    exporting = false,
+                    bytes = manifest.totalBytes,
+                    totalBytes = manifest.totalBytes,
+                    finished = true
+                )
+            } catch (e: CancellationException) {
+                _archive.value = null
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Could not import models", e)
+                _archive.value = ArchiveStatus(
+                    exporting = false,
+                    finished = true,
+                    error = "Could not import models: ${e.readableMessage()}"
+                )
+            }
+        }
+    }
+
+    fun dismissArchiveStatus() {
+        _archive.value = null
     }
 
     // ── Worker callbacks ────────────────────────────────────────────────────

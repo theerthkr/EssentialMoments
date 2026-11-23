@@ -58,8 +58,8 @@ class ModelActivity : ComponentActivity() {
                     .collectAsStateWithLifecycle()
 
                 val currentStatus = when (val s = indexerState) {
-                    is IndexingState.Indexing -> "Status: Indexing ${s.current}/${s.total}..."
-                    is IndexingState.Done -> "Status: Indexing Complete! (${s.count} new)"
+                    is IndexingState.Indexing -> "Status: Indexing ${s.processed}/${s.pending}..."
+                    is IndexingState.Done -> "Status: Indexing Complete! (${s.indexed} new, ${s.skipped} skipped)"
                     is IndexingState.Error -> "Status: Error: ${s.message}"
                     is IndexingState.Idle -> "Status: Idle"
                 }

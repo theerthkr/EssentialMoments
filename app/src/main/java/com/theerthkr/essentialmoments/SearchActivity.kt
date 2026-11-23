@@ -1,5 +1,6 @@
 package com.theerthkr.essentialmoments
 
+import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -11,6 +12,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -49,6 +51,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.theerthkr.essentialmoments.media.mediaThumbnailRequest
 import com.theerthkr.essentialmoments.permissions.AppPermissions
+import com.theerthkr.essentialmoments.permissions.MediaAccess
 import com.theerthkr.essentialmoments.ui.model.SearchModelGate
 import com.theerthkr.essentialmoments.ui.model.openModelManager
 import com.theerthkr.essentialmoments.ui.theme.EssentialMomentsTheme
@@ -104,6 +107,10 @@ fun SearchScreen(onBack: () -> Unit) {
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
         mediaAccess = AppPermissions.mediaAccess(context)
+        val activity = (context as? Activity)
+        if (mediaAccess == MediaAccess.NONE && activity != null) {
+            AppPermissions.openSettingsIfMediaRequestBlocked(activity)
+        }
     }
 
     DisposableEffect(lifecycleOwner) {
@@ -431,7 +438,15 @@ private fun NoPhotoAccessHint(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text(text = "📷", fontSize = 48.sp)
+        Text(
+            text = "📷",
+            fontSize = 48.sp,
+            modifier = Modifier.clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onAllow
+            )
+        )
         Spacer(modifier = Modifier.height(12.dp))
         Text(
             text = "Search needs photo access",

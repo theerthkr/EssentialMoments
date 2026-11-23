@@ -51,6 +51,21 @@ fun ImageInfoBottomSheet(
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp
             )
+            val dateContext = buildString {
+                append(info.dateLabel)
+                if (info.dateAdded != null && info.dateLabel != "Added to library") {
+                    append(" • Added to library ")
+                    append(info.dateAdded)
+                }
+            }
+            if (dateContext.isNotBlank()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = dateContext,
+                    color = Color.Gray,
+                    fontSize = 13.sp
+                )
+            }
             Spacer(modifier = Modifier.height(4.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
