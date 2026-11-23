@@ -25,6 +25,15 @@ class AndroidMediaCatalog(private val contentResolver: ContentResolver) : MediaC
 
     companion object {
         private val EXTERNAL_URI: Uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+
+        private val CANDIDATE_PROJECTION = arrayOf(
+            MediaStore.Images.Media._ID,
+            MediaStore.Images.Media.DATE_MODIFIED,
+            MediaStore.MediaColumns.SIZE,
+            MediaStore.MediaColumns.WIDTH,
+            MediaStore.MediaColumns.HEIGHT,
+            MediaStore.Images.Media.DATE_TAKEN
+        )
     }
 
     override fun allPhotoUris(): List<String> {
@@ -44,6 +53,69 @@ class AndroidMediaCatalog(private val contentResolver: ContentResolver) : MediaC
             return emptyList()
         }
         return uris
+    }
+
+    override fun photoCandidates(): List<PhotoCandidate> {
+        val candidates = mutableListOf<PhotoCandidate>()
+        try {
+            contentResolver.query(
+                EXTERNAL_URI, CANDIDATE_PROJECTION, null, null,
+                "${MediaStore.Images.Media.DATE_MODIFIED} DESC"
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    candidates.add(readCandidate(cursor))
+                }
+            }
+        } catch (_: SecurityException) {
+            // Access may have been revoked between the permission check and this
+            // query. Treat it as an empty library; a later scan reconciles.
+            return emptyList()
+        }
+        return candidates
+    }
+
+    override fun photoCandidate(uri: String): PhotoCandidate? {
+        val canonical = normalizeUri(uri) ?: return null
+        try {
+            contentResolver.query(
+                Uri.parse(canonical), CANDIDATE_PROJECTION, null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) return readCandidate(cursor, canonical)
+            }
+        } catch (_: SecurityException) {
+            return null
+        }
+        return null
+    }
+
+    override fun existingUris(candidates: Collection<String>): Set<String> {
+        if (candidates.isEmpty()) return emptySet()
+        val wanted = candidates.toHashSet()
+        // Reading the currently visible ID set is safer than an `_ID IN (...)`
+        // query: under partial access, asking the provider about unselected IDs
+        // can fail. allPhotoUris() already returns exactly the readable set.
+        return allPhotoUris().filterTo(HashSet()) { it in wanted }
+    }
+
+    private fun readCandidate(cursor: android.database.Cursor, uri: String? = null): PhotoCandidate {
+        val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+        val modifiedCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_MODIFIED)
+        val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
+        val widthCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.WIDTH)
+        val heightCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.HEIGHT)
+        val takenCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_TAKEN)
+
+        val photoUri = uri ?: ContentUris.withAppendedId(
+            EXTERNAL_URI, cursor.getLong(idCol)
+        ).toString()
+        val fingerprint = photoFingerprint(
+            dateModifiedSeconds = cursor.getLong(modifiedCol),
+            sizeBytes = cursor.getLong(sizeCol),
+            width = cursor.getInt(widthCol),
+            height = cursor.getInt(heightCol),
+            dateTakenMs = cursor.getLong(takenCol)
+        )
+        return PhotoCandidate(photoUri, fingerprint)
     }
 
     override fun albums(): List<Album> {

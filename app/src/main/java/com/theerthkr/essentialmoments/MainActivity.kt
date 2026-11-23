@@ -1,10 +1,12 @@
 package com.theerthkr.essentialmoments
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -16,17 +18,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -45,9 +42,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -58,7 +52,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -82,6 +75,7 @@ import com.theerthkr.essentialmoments.permissions.AppPermissions
 import com.theerthkr.essentialmoments.permissions.MediaAccess
 import com.theerthkr.essentialmoments.ui.model.ModelSetupBanner
 import com.theerthkr.essentialmoments.ui.theme.EssentialMomentsTheme
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -100,8 +94,9 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun MainGalleryScreen() {
         val context = LocalContext.current
-        val haptic = LocalHapticFeedback.current
+        val activity = LocalActivity.current ?: (context as? Activity)
         val lifecycleOwner = LocalLifecycleOwner.current
+        val app = context.applicationContext as App
         var showMenu by remember { mutableStateOf(false) }
         var mediaAccess by remember { mutableStateOf(AppPermissions.mediaAccess(context)) }
         var backgroundIndexingActive by remember {
@@ -113,7 +108,6 @@ class MainActivity : ComponentActivity() {
         val viewModel: GalleryViewModel = viewModel()
         val albums by viewModel.albums.collectAsStateWithLifecycle()
         val allPhotos by viewModel.allImages.collectAsStateWithLifecycle()
-        val isDescending by viewModel.isDescending.collectAsStateWithLifecycle()
 
         // Photo access can be full, selected-only (Android 14+), or denied.
         // Re-read the system state on every resume because it can change from
@@ -122,6 +116,11 @@ class MainActivity : ComponentActivity() {
             ActivityResultContracts.RequestMultiplePermissions()
         ) {
             mediaAccess = AppPermissions.mediaAccess(context)
+            // Android stops showing the dialog after repeated denials. Without
+            // this fallback the permission button would appear to do nothing.
+            if (mediaAccess == MediaAccess.NONE && activity != null) {
+                AppPermissions.openSettingsIfMediaRequestBlocked(activity)
+            }
         }
 
         val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -151,6 +150,10 @@ class MainActivity : ComponentActivity() {
                         viewModel.fetchAllImages()
                     } else if (hadAccess) {
                         viewModel.clear()
+                        // Not accessible is the same as not existing. Drop the
+                        // embeddings now; a later scan rebuilds them when access
+                        // is granted again.
+                        app.applicationScope.launch { app.photoIndexer.clearIndex() }
                     }
                     IndexingScheduler.reconcile(context)
                     backgroundIndexingActive =
@@ -170,6 +173,7 @@ class MainActivity : ComponentActivity() {
                     IndexingScheduler.isBackgroundIndexingActive(context)
             } else {
                 viewModel.clear()
+                app.applicationScope.launch { app.photoIndexer.clearIndex() }
             }
         }
 
@@ -207,59 +211,8 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        val searchVm: SearchViewModel = viewModel(factory = SearchViewModel.Factory(context))
-        val imagePicker = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.GetMultipleContents()
-        ) { uris ->
-            if (uris.isNotEmpty()) {
-                searchVm.indexImages(uris)
-                val intent = Intent(context, SearchActivity::class.java)
-                context.startActivity(intent)
-            }
-        }
-
         Scaffold(
-            modifier = Modifier.fillMaxSize(),
-            floatingActionButton = {
-                // FAB with Glow Effect
-                Box(
-                    modifier = Modifier
-                        .windowInsetsPadding(
-                            WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
-                        )
-                        .padding(bottom = 80.dp)
-                ) {
-                    // Glow background
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), CircleShape)
-                            .padding(4.dp)
-                    )
-
-                    FloatingActionButton(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            if (selectedTab == "Photos") {
-                                viewModel.toggleSortOrder()
-                            } else {
-                                imagePicker.launch("image/*")
-                            }
-                        },
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = if (selectedTab == "Photos" && isDescending) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                        shape = CircleShape,
-                        modifier = Modifier
-                            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), CircleShape)
-                    ) {
-                        if (selectedTab == "Photos") {
-                            Icon(Icons.AutoMirrored.Filled.Sort, "Sort")
-                        } else {
-                            Icon(Icons.Default.Add, "Index Photos", tint = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                }
-            }
+            modifier = Modifier.fillMaxSize()
         ) { paddingValues ->
             Box(modifier = Modifier
                 .fillMaxSize()
@@ -555,9 +508,15 @@ private fun NoPhotoAccess(
     ) {
         Icon(
             imageVector = Icons.Default.PhotoLibrary,
-            contentDescription = null,
+            contentDescription = if (supportsPartialAccess) "Choose Photos" else "Allow Photo Access",
             tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(56.dp)
+            modifier = Modifier
+                .size(56.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onRequestAccess
+                )
         )
         Spacer(Modifier.height(16.dp))
         Text(

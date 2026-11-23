@@ -15,7 +15,7 @@ import androidx.room.TypeConverters
  */
 @Database(
     entities = [ImageIndexEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 @TypeConverters(FloatArrayConverter::class)

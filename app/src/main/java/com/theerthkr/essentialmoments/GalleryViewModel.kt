@@ -37,9 +37,6 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     private val _allImages = MutableStateFlow<List<MediaImage>>(emptyList())
     val allImages: StateFlow<List<MediaImage>> = _allImages.asStateFlow()
 
-    private val _isDescending = MutableStateFlow(true)
-    val isDescending: StateFlow<Boolean> = _isDescending.asStateFlow()
-
     /** Which collections this screen currently cares about. */
     private var wantsAlbums = false
     private var wantsAllImages = false
@@ -68,11 +65,6 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun toggleSortOrder() {
-        _isDescending.value = !_isDescending.value
-        _allImages.value = _allImages.value.reversed()
-    }
-
     fun fetchAlbums() {
         wantsAlbums = true
         refreshRequests.trySend(Unit)
@@ -94,8 +86,7 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             _albums.value = albumsList
         }
         if (wantsAllImages) {
-            val photos = withContext(Dispatchers.IO) { mediaCatalog.allPhotos() }
-            _allImages.value = if (_isDescending.value) photos else photos.reversed()
+            _allImages.value = withContext(Dispatchers.IO) { mediaCatalog.allPhotos() }
         }
         wantedAlbumId?.let { albumId ->
             val photos = withContext(Dispatchers.IO) { mediaCatalog.albumPhotos(albumId) }

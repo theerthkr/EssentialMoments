@@ -8,6 +8,10 @@ import androidx.room.PrimaryKey
  * Room row storing a photo's canonical URI, its SigLIP embedding, and the
  * [modelId] of the model that generated the embedding.
  *
+ * [fingerprint] records the MediaStore metadata that the embedding was built
+ * from. A scan deletes the row when the fingerprint changes, so a replaced or
+ * renamed photo can never keep serving an embedding of its previous content.
+ *
  * The unique [modelId] + [uri] index gives the index upsert semantics: indexing
  * the same photo twice for the same model replaces the old row instead of
  * creating a duplicate. [modelId] scopes search, so text and vision embeddings
@@ -24,5 +28,6 @@ data class ImageIndexEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val uri: String,
     val modelId: String,
-    val embedding: FloatArray
+    val embedding: FloatArray,
+    val fingerprint: String
 )

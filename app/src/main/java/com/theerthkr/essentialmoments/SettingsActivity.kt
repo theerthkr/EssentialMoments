@@ -564,7 +564,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                                         }
 
                                         Text(
-                                            text = "${state.current} / ${state.total}",
+                                            text = "${state.processed} / ${state.pending}",
                                             style = MaterialTheme.typography.labelMedium,
                                             color = MaterialTheme.colorScheme.primary
                                         )
@@ -572,8 +572,8 @@ fun SettingsScreen(onBack: () -> Unit) {
 
                                     Spacer(modifier = Modifier.height(10.dp))
 
-                                    val progress = if (state.total > 0) {
-                                        state.current.toFloat() / state.total
+                                    val progress = if (state.pending > 0) {
+                                        state.processed.toFloat() / state.pending
                                     } else {
                                         0f
                                     }
@@ -624,10 +624,14 @@ fun SettingsScreen(onBack: () -> Unit) {
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
-                                            text = if (state.count > 0) {
-                                                "Indexed ${state.count} new photo(s)"
-                                            } else {
-                                                "Photos up to date"
+                                            text = when {
+                                                state.indexed > 0 && state.skipped > 0 ->
+                                                    "Indexed ${state.indexed} new photo(s); ${state.skipped} could not be read"
+                                                state.indexed > 0 ->
+                                                    "Indexed ${state.indexed} new photo(s)"
+                                                state.skipped > 0 ->
+                                                    "No new photos; ${state.skipped} could not be read"
+                                                else -> "Photos up to date"
                                             },
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.onSurface

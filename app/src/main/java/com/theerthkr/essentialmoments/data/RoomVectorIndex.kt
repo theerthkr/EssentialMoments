@@ -1,11 +1,15 @@
 package com.theerthkr.essentialmoments.data
 
+import com.theerthkr.essentialmoments.media.PhotoCandidate
+
 /**
  * Production adapter for [VectorIndex] backed by Room.
  *
- * - [filterUnindexed] loads only the URIs already indexed for one model, so a
- *   large library never materializes embedding blobs just to deduplicate.
- * - [putBatch] upserts URI + embedding + modelId rows in one Room transaction.
+ * - [reconcile] compares stored (uri, fingerprint) pairs with the current
+ *   MediaStore catalog, deleting rows that disappeared or changed before the
+ *   indexer attempts to re-embed them.
+ * - [putBatch] upserts URI + embedding + modelId + fingerprint rows in one
+ *   Room transaction.
  * - [queryAll] performs an exact dot-product scan restricted to one [modelId],
  *   so a text query from model A is never scored against an image embedding
  *   from model B.
@@ -14,11 +18,45 @@ package com.theerthkr.essentialmoments.data
  */
 class RoomVectorIndex(private val dao: ImageIndexDao) : VectorIndex {
 
-    override suspend fun filterUnindexed(uris: List<String>, modelId: String): List<String> {
-        if (uris.isEmpty()) return emptyList()
+    override suspend fun reconcile(
+        candidates: List<PhotoCandidate>,
+        modelId: String,
+        pruneMissing: Boolean,
+        forceUris: Set<String>
+    ): List<PhotoCandidate> {
+        val stored = dao.indexedStates(modelId).associateBy { it.uri }
+        val candidateUris = candidates.mapTo(HashSet(candidates.size)) { it.uri }
 
-        val existingUris: Set<String> = dao.indexedUris(modelId).toHashSet()
-        return uris.filter { it !in existingUris }
+        val toDelete = LinkedHashSet<String>()
+        val toIndex = ArrayList<PhotoCandidate>(candidates.size)
+
+        for (candidate in candidates) {
+            val existing = stored[candidate.uri]
+            val changed = existing != null && existing.fingerprint != candidate.fingerprint
+            if (existing == null || changed || candidate.uri in forceUris) {
+                toIndex.add(candidate)
+                if (existing != null) toDelete.add(candidate.uri)
+            }
+        }
+
+        if (pruneMissing) {
+            for (uri in stored.keys) {
+                if (uri !in candidateUris) toDelete.add(uri)
+            }
+        }
+
+        // Explicitly forced URIs that are no longer readable must disappear too.
+        for (uri in forceUris) {
+            if (uri !in candidateUris && uri in stored) toDelete.add(uri)
+        }
+
+        if (toDelete.isNotEmpty()) {
+            for (chunk in toDelete.chunked(DELETE_CHUNK_SIZE)) {
+                dao.deleteByUris(modelId, chunk)
+            }
+        }
+
+        return toIndex
     }
 
     override suspend fun putBatch(entries: List<VectorIndex.IndexEntry>) {
@@ -28,7 +66,8 @@ class RoomVectorIndex(private val dao: ImageIndexDao) : VectorIndex {
                 ImageIndexEntity(
                     uri = entry.uri,
                     modelId = entry.modelId,
-                    embedding = entry.embedding
+                    embedding = entry.embedding,
+                    fingerprint = entry.fingerprint
                 )
             }
         )
@@ -51,4 +90,11 @@ class RoomVectorIndex(private val dao: ImageIndexDao) : VectorIndex {
             .sortedByDescending { it.score }
 
     override suspend fun indexedCount(): Int = dao.count()
+
+    override suspend fun clear() = dao.clearAll()
+
+    private companion object {
+        /** Keep every bind list comfortably below SQLite's variable limit. */
+        const val DELETE_CHUNK_SIZE = 500
+    }
 }
