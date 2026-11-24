@@ -60,7 +60,6 @@ android {
         buildConfigField("String", "MODEL_MANIFEST_URL", "\"$modelManifestUrl\"")
         buildConfigField("String", "MODEL_MANIFEST_PUBLIC_KEY", "\"$modelManifestPublicKey\"")
         buildConfigField("boolean", "BUNDLE_MODELS", "$bundleModels")
-        base.archivesName.set("essentialmoments-v$versionName")
     }
     buildTypes {
         release {
