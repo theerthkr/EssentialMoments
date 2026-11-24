@@ -41,6 +41,7 @@ val bundleModels: Boolean =
 
 android {
     namespace = "com.theerthkr.essentialmoments"
+    buildToolsVersion = "36.0.0"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
